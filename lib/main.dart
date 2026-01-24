@@ -72,11 +72,26 @@ class _MainScreenState extends State<MainScreen> {
         },
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: ''),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: ''),
-          BottomNavigationBarItem(icon: Icon(Icons.bookmark), label: ''),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: ''),
+        iconSize: 24,
+        items: [
+          BottomNavigationBarItem(
+            icon: SizedBox(
+              width: 24,
+              height: 24,
+              child: Image.asset('assets/quotes1.png', fit: BoxFit.contain),
+            ),
+            label: '',
+          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.search), label: ''),
+          BottomNavigationBarItem(
+            icon: SizedBox(
+              width: 24,
+              height: 24,
+              child: Image.asset('assets/heart1-1.png', fit: BoxFit.contain),
+            ),
+            label: '',
+          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.person), label: ''),
         ],
       ),
     );
@@ -97,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _deviceId;
   int? _userIdx;
   bool _isSavingLike = false;
+  Set<String> _savedQuoteIds = {};
 
   @override
   void initState() {
@@ -166,6 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _userIdx = _toInt(user['idx']);
         });
+        await _loadSavedQuoteIds();
       }
     } catch (e) {
       // 디바이스 정보를 가져오지 못해도 앱 동작에는 영향 없음
@@ -173,7 +190,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _saveUserQuote(String? quoteId) async {
+  Future<void> _loadSavedQuoteIds() async {
+    if (_userIdx == null) return;
+    try {
+      final userQuotes = await supabase
+          .from('users_quotes')
+          .select('quotes_id')
+          .eq('user_idx', _userIdx!);
+
+      final ids = userQuotes
+          .map<String?>((row) => row['quotes_id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toSet();
+
+      if (mounted) {
+        setState(() {
+          _savedQuoteIds = ids;
+        });
+      }
+    } catch (e) {
+      print('저장된 명언 ID 로드 실패: $e');
+    }
+  }
+
+  Future<void> _toggleUserQuote(String? quoteId) async {
     if (quoteId == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -205,15 +246,39 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      await supabase.from('users_quotes').upsert({
-        'user_idx': _userIdx,
-        'quotes_id': quoteId,
-      }, onConflict: 'user_idx,quotes_id');
+      final isSaved = _savedQuoteIds.contains(quoteId);
 
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('보관함에 저장되었습니다.')));
+      if (isSaved) {
+        // 이미 저장됨 → 삭제
+        await supabase
+            .from('users_quotes')
+            .delete()
+            .eq('user_idx', _userIdx!)
+            .eq('quotes_id', quoteId);
+
+        if (mounted) {
+          setState(() {
+            _savedQuoteIds.remove(quoteId);
+          });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('보관함에서 삭제되었습니다.')));
+        }
+      } else {
+        // 저장 안됨 → 추가
+        await supabase.from('users_quotes').upsert({
+          'user_idx': _userIdx,
+          'quotes_id': quoteId,
+        }, onConflict: 'user_idx,quotes_id');
+
+        if (mounted) {
+          setState(() {
+            _savedQuoteIds.add(quoteId);
+          });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('보관함에 저장되었습니다.')));
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -294,8 +359,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             final quote = _quotes[index];
                             final quoteId = _extractQuoteId(quote);
                             return _buildContentBox(
-                              '${quote['resoner']}',
-                              quote['text'],
+                              '${quote['resoner_kr']}',
+                              quote['text_kr'],
                               quoteId,
                             );
                           },
@@ -352,13 +417,14 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               IconButton(
                 onPressed: () {
-                  _saveUserQuote(quoteId);
+                  _toggleUserQuote(quoteId);
                 },
                 icon: Image.asset(
-                  'assets/heart1-1.png',
-                  width: 20,
-                  height: 20,
-                  color: Colors.grey[600],
+                  quoteId != null && _savedQuoteIds.contains(quoteId)
+                      ? 'assets/heart2.png'
+                      : 'assets/heart1.png',
+                  width: 24,
+                  height: 24,
                 ),
                 tooltip: '좋아요',
               ),
@@ -392,11 +458,12 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _allQuotes = [];
   List<Map<String, dynamic>> _filteredQuotes = [];
   bool _isLoading = true;
-  String _searchType = 'author'; // 'author' 또는 'content'
+  String _searchType = 'author'; // 'author', 'content', 또는 'subject'
   bool _hasSearched = false;
   String? _deviceId;
   int? _userIdx;
   bool _isSavingLike = false;
+  Set<String> _savedQuoteIds = {};
 
   @override
   void initState() {
@@ -473,13 +540,38 @@ class _SearchScreenState extends State<SearchScreen> {
         setState(() {
           _userIdx = _toInt(user['idx']);
         });
+        await _loadSavedQuoteIds();
       }
     } catch (e) {
       print('사용자 식별자 로드 실패: $e');
     }
   }
 
-  Future<void> _saveUserQuote(String? quoteId) async {
+  Future<void> _loadSavedQuoteIds() async {
+    if (_userIdx == null) return;
+    try {
+      final userQuotes = await supabase
+          .from('users_quotes')
+          .select('quotes_id')
+          .eq('user_idx', _userIdx!);
+
+      final ids = userQuotes
+          .map<String?>((row) => row['quotes_id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toSet();
+
+      if (mounted) {
+        setState(() {
+          _savedQuoteIds = ids;
+        });
+      }
+    } catch (e) {
+      print('저장된 명언 ID 로드 실패: $e');
+    }
+  }
+
+  Future<void> _toggleUserQuote(String? quoteId) async {
     if (quoteId == null) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -510,15 +602,37 @@ class _SearchScreenState extends State<SearchScreen> {
         return;
       }
 
-      await supabase.from('users_quotes').upsert({
-        'user_idx': _userIdx,
-        'quotes_id': quoteId,
-      }, onConflict: 'user_idx,quotes_id');
+      final isSaved = _savedQuoteIds.contains(quoteId);
 
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('보관함에 저장되었습니다.')));
+      if (isSaved) {
+        await supabase
+            .from('users_quotes')
+            .delete()
+            .eq('user_idx', _userIdx!)
+            .eq('quotes_id', quoteId);
+
+        if (mounted) {
+          setState(() {
+            _savedQuoteIds.remove(quoteId);
+          });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('보관함에서 삭제되었습니다.')));
+        }
+      } else {
+        await supabase.from('users_quotes').upsert({
+          'user_idx': _userIdx,
+          'quotes_id': quoteId,
+        }, onConflict: 'user_idx,quotes_id');
+
+        if (mounted) {
+          setState(() {
+            _savedQuoteIds.add(quoteId);
+          });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('보관함에 저장되었습니다.')));
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -549,13 +663,20 @@ class _SearchScreenState extends State<SearchScreen> {
       _hasSearched = true;
       if (_searchType == 'author') {
         _filteredQuotes = _allQuotes.where((quote) {
-          return quote['resoner'].toString().toLowerCase().contains(
+          return quote['resoner_kr'].toString().toLowerCase().contains(
+            query.toLowerCase(),
+          );
+        }).toList();
+      } else if (_searchType == 'content') {
+        _filteredQuotes = _allQuotes.where((quote) {
+          return quote['text_kr'].toString().toLowerCase().contains(
             query.toLowerCase(),
           );
         }).toList();
       } else {
+        // subject
         _filteredQuotes = _allQuotes.where((quote) {
-          return quote['text'].toString().toLowerCase().contains(
+          return (quote['tag_kr']?.toString() ?? '').toLowerCase().contains(
             query.toLowerCase(),
           );
         }).toList();
@@ -601,172 +722,235 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFCCFFCC),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 상단 제목
-              const Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 상단 영역 (패딩 있음)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '검색',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                  // 상단 제목
+                  const Row(
+                    children: [
+                      Text(
+                        '검색',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 검색바 섹션
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8.0),
+                    height: 56.0,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12.0),
+                      border: Border.all(
+                        color: Colors.grey.withOpacity(0.2),
+                        width: 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 1,
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: _performSearch,
+                      decoration: InputDecoration(
+                        hintText: '입력',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.grey,
+                          size: 20,
+                        ),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _performSearch('');
+                                },
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: Colors.grey,
+                                  size: 20,
+                                ),
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 16.0,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // 검색 타입 선택 탭
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _searchType = 'author';
+                              });
+                              _performSearch(_searchController.text);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12.0,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: _searchType == 'author'
+                                        ? Colors.black87
+                                        : Colors.transparent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                '저자',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: _searchType == 'author'
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: _searchType == 'author'
+                                      ? Colors.black87
+                                      : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _searchType = 'content';
+                              });
+                              _performSearch(_searchController.text);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12.0,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: _searchType == 'content'
+                                        ? Colors.black87
+                                        : Colors.transparent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                '본문',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: _searchType == 'content'
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: _searchType == 'content'
+                                      ? Colors.black87
+                                      : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _searchType = 'subject';
+                              });
+                              _performSearch(_searchController.text);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12.0,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: _searchType == 'subject'
+                                        ? Colors.black87
+                                        : Colors.transparent,
+                                    width: 2.0,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                '주제',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: _searchType == 'subject'
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: _searchType == 'subject'
+                                      ? Colors.black87
+                                      : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-
-              // 검색바 섹션
-              Container(
-                margin: const EdgeInsets.only(bottom: 20.0),
-                height: 56.0, // 고정 높이 설정
-                child: Row(
-                  children: [
-                    // 검색 타입 선택 드롭다운
-                    Container(
-                      width: 120,
-                      height: 56.0, // TextField와 동일한 높이
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(12.0),
-                          bottomLeft: Radius.circular(12.0),
-                        ),
-                        border: Border.all(
-                          color: Colors.grey.withOpacity(0.2),
-                          width: 1.0,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 1,
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _searchType,
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _searchType = newValue!;
-                            });
-                            _performSearch(_searchController.text);
-                          },
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                          borderRadius: BorderRadius.circular(12.0),
-                          isExpanded: true, // 전체 너비 사용
-                          icon: const Icon(
-                            Icons.arrow_drop_down,
-                            color: Colors.grey,
-                            size: 20,
-                          ),
-                          style: const TextStyle(
-                            color: Colors.black87,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'author',
-                              child: Text('저자'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'content',
-                              child: Text('명언 내용'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // 검색 입력창
-                    Expanded(
-                      child: Container(
-                        height: 56.0, // 드롭다운과 동일한 높이
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: const BorderRadius.only(
-                            topRight: Radius.circular(12.0),
-                            bottomRight: Radius.circular(12.0),
-                          ),
-                          border: Border.all(
-                            color: Colors.grey.withOpacity(0.2),
-                            width: 1.0,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.1),
-                              spreadRadius: 1,
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: _performSearch,
-                          decoration: InputDecoration(
-                            hintText: _searchType == 'author'
-                                ? '저자명을 입력하세요'
-                                : '명언 내용을 입력하세요',
-                            hintStyle: TextStyle(
-                              color: Colors.grey[400],
-                              fontSize: 14,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.search,
-                              color: Colors.grey,
-                              size: 20,
-                            ),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      _performSearch('');
-                                    },
-                                    icon: const Icon(
-                                      Icons.clear,
-                                      color: Colors.grey,
-                                      size: 20,
-                                    ),
-                                  )
-                                : null,
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16.0,
-                              vertical: 16.0,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+            ),
+            // 검색 결과 또는 안내 메시지 (패딩 없음, 전체 너비)
+            Expanded(
+              child: Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 16.0,
                 ),
-              ),
-              // 검색 결과 또는 안내 메시지
-              Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _filteredQuotes.isEmpty
                     ? _hasSearched
-                          ? const Center(
+                          ? Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(
-                                    Icons.search_off,
-                                    size: 80,
-                                    color: Colors.grey,
+                                  Image.asset(
+                                    'assets/sorry.png',
+                                    width: 160,
+                                    height: 160,
                                   ),
                                   SizedBox(height: 20),
                                   Text(
-                                    '검색 결과가 없습니다',
+                                    '아직 추가되지 않은 내용이에요.',
                                     style: TextStyle(
                                       fontSize: 18,
                                       color: Colors.grey,
@@ -775,11 +959,12 @@ class _SearchScreenState extends State<SearchScreen> {
                                   ),
                                   SizedBox(height: 8),
                                   Text(
-                                    '다른 검색어를 시도해보세요',
+                                    '공유 달성도를 충족하시면\n자유롭게 추가 요청을 하실 수 있어요!',
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey,
                                     ),
+                                    textAlign: TextAlign.center,
                                   ),
                                 ],
                               ),
@@ -799,16 +984,16 @@ class _SearchScreenState extends State<SearchScreen> {
                             final quote = _filteredQuotes[index];
                             final quoteId = _extractQuoteId(quote);
                             return _buildContentBox(
-                              '${quote['resoner']}',
-                              quote['text'],
+                              '${quote['resoner_kr']}',
+                              quote['text_kr'],
                               quoteId,
                             );
                           },
                         ),
                       ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -816,19 +1001,11 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildContentBox(String title, String content, String? quoteId) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16.0),
-      padding: const EdgeInsets.all(20.0),
+      margin: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(8.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -836,47 +1013,21 @@ class _SearchScreenState extends State<SearchScreen> {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 15,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           Text(
             content,
             style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-              height: 1.5,
+              fontSize: 13,
+              color: Colors.grey[600],
+              height: 1.4,
             ),
-          ),
-          const SizedBox(height: 16),
-          // 버튼 영역
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                onPressed: () {
-                  _saveUserQuote(quoteId);
-                },
-                icon: Image.asset(
-                  'assets/heart1-1.png',
-                  width: 20,
-                  height: 20,
-                  color: Colors.grey[600],
-                ),
-                tooltip: '좋아요',
-              ),
-              IconButton(
-                onPressed: () {
-                  _shareContent(title, content);
-                },
-                icon: const Icon(Icons.share),
-                iconSize: 20,
-                color: Colors.grey[600],
-                tooltip: '공유하기',
-              ),
-            ],
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -1012,6 +1163,52 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     }
   }
 
+  Future<void> _removeFromBookmark(String? quoteId) async {
+    if (quoteId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('명언 ID를 찾을 수 없습니다.')));
+      }
+      return;
+    }
+
+    try {
+      final userIdx = _userIdx;
+      if (userIdx == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('사용자 정보를 찾을 수 없습니다.')));
+        }
+        return;
+      }
+
+      await supabase
+          .from('users_quotes')
+          .delete()
+          .eq('user_idx', userIdx)
+          .eq('quotes_id', quoteId);
+
+      // 리스트에서 제거
+      setState(() {
+        _savedQuotes.removeWhere((quote) => quote['id']?.toString() == quoteId);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('보관함에서 삭제되었습니다.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('삭제 중 오류가 발생했습니다: $e')));
+      }
+    }
+  }
+
   void _shareContent(String title, String content) async {
     try {
       await Share.share(
@@ -1033,7 +1230,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFCCFFCC),
+      backgroundColor: const Color(0xFFF8E3DF),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
@@ -1071,9 +1268,11 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                           itemCount: _savedQuotes.length,
                           itemBuilder: (context, index) {
                             final quote = _savedQuotes[index];
+                            final quoteId = quote['id']?.toString();
                             return _buildBookmarkCard(
-                              '${quote['resoner']}',
-                              quote['text'],
+                              '${quote['resoner_kr']}',
+                              quote['text_kr'],
+                              quoteId,
                             );
                           },
                         ),
@@ -1086,7 +1285,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     );
   }
 
-  Widget _buildBookmarkCard(String title, String content) {
+  Widget _buildBookmarkCard(String title, String content, String? quoteId) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16.0),
       padding: const EdgeInsets.all(20.0),
@@ -1124,8 +1323,15 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
           ),
           const SizedBox(height: 16),
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              IconButton(
+                onPressed: () {
+                  _removeFromBookmark(quoteId);
+                },
+                icon: Image.asset('assets/heart2.png', width: 24, height: 24),
+                tooltip: '보관함에서 삭제',
+              ),
               IconButton(
                 onPressed: () {
                   _shareContent(title, content);
