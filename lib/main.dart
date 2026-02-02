@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:convert';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -113,12 +114,51 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _userIdx;
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
+  Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
 
   @override
   void initState() {
     super.initState();
+    _loadResonerImages();
     _loadQuotes();
     _initUserIdentity();
+  }
+
+  // assets/resoner/ 폴더의 이미지 목록 로드
+  Future<void> _loadResonerImages() async {
+    try {
+      final manifestContent = await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+
+      final resonerFiles = manifestMap.keys
+          .where((path) => path.startsWith('assets/resoner/'))
+          .toList();
+
+      final Map<String, String> imageMap = {};
+      for (final path in resonerFiles) {
+        // 파일명에서 id 추출 (예: assets/resoner/1_name.png -> 1)
+        final fileName = path.split('/').last;
+        final idMatch = RegExp(r'^(\d+)_').firstMatch(fileName);
+        if (idMatch != null) {
+          final id = idMatch.group(1)!;
+          imageMap[id] = path;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _resonerImages = imageMap;
+        });
+      }
+    } catch (e) {
+      print('Resoner 이미지 로드 실패: $e');
+    }
+  }
+
+  // quoteId로 이미지 경로 가져오기
+  String? _getResonerImagePath(String? quoteId) {
+    if (quoteId == null) return null;
+    return _resonerImages[quoteId];
   }
 
   // Supabase에서 명언 데이터 가져오기
@@ -377,10 +417,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildContentBox(String title, String content, String? quoteId) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16.0),
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12.0),
+        borderRadius: BorderRadius.circular(16.0),
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withOpacity(0.1),
@@ -391,23 +431,46 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+          // 원형 프로필 이미지
+          ClipOval(
+            child: Container(
+              width: 70,
+              height: 70,
+              color: Colors.grey[200],
+              child: _getResonerImagePath(quoteId) != null
+                  ? Image.asset(
+                      _getResonerImagePath(quoteId)!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(Icons.person, size: 40, color: Colors.grey[400]);
+                      },
+                    )
+                  : Icon(Icons.person, size: 40, color: Colors.grey[400]),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          // 명언 텍스트 (중앙 정렬, 이탤릭)
           Text(
             content,
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-              height: 1.5,
+              fontSize: 15,
+              fontStyle: FontStyle.italic,
+              color: Colors.grey[800],
+              height: 1.6,
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 저자명 (대문자 스타일)
+          Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[500],
+              letterSpacing: 1.5,
             ),
           ),
           const SizedBox(height: 16),
@@ -457,6 +520,7 @@ class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _allQuotes = [];
   List<Map<String, dynamic>> _filteredQuotes = [];
+  List<String> _uniqueAuthors = []; // 저자 검색용 고유 저자 목록
   bool _isLoading = true;
   String _searchType = 'author'; // 'author', 'content', 또는 'subject'
   bool _hasSearched = false;
@@ -653,7 +717,8 @@ class _SearchScreenState extends State<SearchScreen> {
   void _performSearch(String query) {
     if (query.isEmpty) {
       setState(() {
-        _filteredQuotes = _allQuotes; // 빈 검색어일 때 모든 명언 표시
+        _filteredQuotes = [];
+        _uniqueAuthors = [];
         _hasSearched = false;
       });
       return;
@@ -662,17 +727,25 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() {
       _hasSearched = true;
       if (_searchType == 'author') {
-        _filteredQuotes = _allQuotes.where((quote) {
-          return quote['resoner_kr'].toString().toLowerCase().contains(
-            query.toLowerCase(),
-          );
-        }).toList();
+        // 저자 검색: resoner_kr만 검색하고 중복 제거 (group by)
+        final matchingAuthors = _allQuotes
+            .where((quote) => quote['resoner_kr']
+                .toString()
+                .toLowerCase()
+                .contains(query.toLowerCase()))
+            .map((quote) => quote['resoner_kr'].toString())
+            .toSet()
+            .toList();
+        _uniqueAuthors = matchingAuthors;
+        _filteredQuotes = [];
       } else if (_searchType == 'content') {
+        // 본문 검색: text_kr만 검색
         _filteredQuotes = _allQuotes.where((quote) {
           return quote['text_kr'].toString().toLowerCase().contains(
             query.toLowerCase(),
           );
         }).toList();
+        _uniqueAuthors = [];
       } else {
         // subject
         _filteredQuotes = _allQuotes.where((quote) {
@@ -680,6 +753,7 @@ class _SearchScreenState extends State<SearchScreen> {
             query.toLowerCase(),
           );
         }).toList();
+        _uniqueAuthors = [];
       }
     });
   }
@@ -937,64 +1011,154 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _filteredQuotes.isEmpty
-                    ? _hasSearched
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    'assets/sorry.png',
-                                    width: 160,
-                                    height: 160,
-                                  ),
-                                  SizedBox(height: 20),
-                                  Text(
-                                    '아직 추가되지 않은 내용이에요.',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      color: Colors.grey,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    '공유 달성도를 충족하시면\n자유롭게 추가 요청을 하실 수 있어요!',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            )
-                          : const Center(
-                              child: Text(
-                                '명언이 없습니다.\n데이터베이스를 확인해주세요.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 16),
-                              ),
-                            )
-                    : RefreshIndicator(
-                        onRefresh: _loadQuotes,
-                        child: ListView.builder(
-                          itemCount: _filteredQuotes.length,
-                          itemBuilder: (context, index) {
-                            final quote = _filteredQuotes[index];
-                            final quoteId = _extractQuoteId(quote);
-                            return _buildContentBox(
-                              '${quote['resoner_kr']}',
-                              quote['text_kr'],
-                              quoteId,
-                            );
-                          },
-                        ),
-                      ),
+                    : _buildSearchResults(),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 검색 결과 위젯 빌드
+  Widget _buildSearchResults() {
+    // 검색하지 않은 상태
+    if (!_hasSearched) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.manage_search,
+              size: 80,
+              color: Colors.grey[300],
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '검색하고 싶은 항목을 우선 선택해주세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '저자, 본문, 주제, 어느 것을 찾고 싶으세요?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 저자 검색인 경우
+    if (_searchType == 'author') {
+      if (_uniqueAuthors.isEmpty) {
+        return _buildNoResultsWidget();
+      }
+      return RefreshIndicator(
+        onRefresh: _loadQuotes,
+        child: ListView.builder(
+          itemCount: _uniqueAuthors.length,
+          itemBuilder: (context, index) {
+            final author = _uniqueAuthors[index];
+            return _buildAuthorItem(author);
+          },
+        ),
+      );
+    }
+
+    // 본문/주제 검색인 경우
+    if (_filteredQuotes.isEmpty) {
+      return _buildNoResultsWidget();
+    }
+    return RefreshIndicator(
+      onRefresh: _loadQuotes,
+      child: ListView.builder(
+        itemCount: _filteredQuotes.length,
+        itemBuilder: (context, index) {
+          final quote = _filteredQuotes[index];
+          final quoteId = _extractQuoteId(quote);
+          return _buildContentBox(
+            '${quote['resoner_kr']}',
+            quote['text_kr'],
+            quoteId,
+          );
+        },
+      ),
+    );
+  }
+
+  // 검색 결과 없음 위젯
+  Widget _buildNoResultsWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset(
+            'assets/sorry.png',
+            width: 160,
+            height: 160,
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '아직 추가되지 않은 내용이에요.',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '공유 달성도를 충족하시면\n자유롭게 추가 요청을 하실 수 있어요!',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 저자 아이템 위젯
+  Widget _buildAuthorItem(String author) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8.0),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.grey[300],
+            child: Icon(Icons.person, color: Colors.grey[600], size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              author,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+          Icon(Icons.chevron_right, color: Colors.grey[400]),
+        ],
       ),
     );
   }
@@ -1048,11 +1212,49 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   bool _isLoading = true;
   String? _deviceId;
   int? _userIdx;
+  Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
 
   @override
   void initState() {
     super.initState();
+    _loadResonerImages();
     _initUserIdentity();
+  }
+
+  // assets/resoner/ 폴더의 이미지 목록 로드
+  Future<void> _loadResonerImages() async {
+    try {
+      final manifestContent = await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+
+      final resonerFiles = manifestMap.keys
+          .where((path) => path.startsWith('assets/resoner/'))
+          .toList();
+
+      final Map<String, String> imageMap = {};
+      for (final path in resonerFiles) {
+        final fileName = path.split('/').last;
+        final idMatch = RegExp(r'^(\d+)_').firstMatch(fileName);
+        if (idMatch != null) {
+          final id = idMatch.group(1)!;
+          imageMap[id] = path;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _resonerImages = imageMap;
+        });
+      }
+    } catch (e) {
+      print('Resoner 이미지 로드 실패: $e');
+    }
+  }
+
+  // quoteId로 이미지 경로 가져오기
+  String? _getResonerImagePath(String? quoteId) {
+    if (quoteId == null) return null;
+    return _resonerImages[quoteId];
   }
 
   Future<void> _initUserIdentity() async {
@@ -1288,40 +1490,57 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   Widget _buildBookmarkCard(String title, String content, String? quoteId) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16.0),
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: const Color(0xFFFDF0EE),
+        borderRadius: BorderRadius.circular(16.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 상단: 프로필 이미지 + 저자명
+          Row(
+            children: [
+              ClipOval(
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  color: Colors.grey[300],
+                  child: _getResonerImagePath(quoteId) != null
+                      ? Image.asset(
+                          _getResonerImagePath(quoteId)!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(Icons.person, size: 20, color: Colors.grey[600]);
+                          },
+                        )
+                      : Icon(Icons.person, size: 20, color: Colors.grey[600]),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // 명언 텍스트 (왼쪽 정렬)
           Text(
-            title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+            content,
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[800],
+              height: 1.6,
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            content,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 16),
+          // 버튼 영역 (중앙)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

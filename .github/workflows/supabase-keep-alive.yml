@@ -1,0 +1,17 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    # 매주 수요일과 토요일 자정(UTC)에 실행 (약 3~4일 간격)
+    - cron: '0 0 * * 3,6'
+  workflow_dispatch: # 수동으로도 실행할 수 있게 버튼 활성화
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send a request to Supabase
+        run: |
+          curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/your_table_name?select=*" \
+          -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}"
