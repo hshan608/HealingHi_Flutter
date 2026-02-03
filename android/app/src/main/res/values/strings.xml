@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">힐링하이</string>
+    <string name="widget_description">랜덤 명언 위젯 - 탭하여 새로운 명언 보기</string>
+</resources>
