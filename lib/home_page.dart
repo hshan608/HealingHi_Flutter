@@ -325,7 +325,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildContentBox(String title, String content, String? quoteId) {
-    return Container(
+    return GestureDetector(
+      onDoubleTap: () async {
+        await Clipboard.setData(
+          ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('클립보드에 복사되었습니다!')),
+          );
+        }
+      },
+      child: Container(
       margin: const EdgeInsets.only(bottom: 16.0),
       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
       decoration: BoxDecoration(
@@ -341,49 +352,51 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 원형 프로필 이미지
-          ClipOval(
-            child: Container(
-              width: 70,
-              height: 70,
-              color: Colors.grey[200],
-              child: _getResonerImagePath(quoteId) != null
-                  ? Image.asset(
-                      _getResonerImagePath(quoteId)!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Icon(Icons.person, size: 40, color: Colors.grey[400]);
-                      },
-                    )
-                  : Icon(Icons.person, size: 40, color: Colors.grey[400]),
-            ),
+          // 상단: 프로필 이미지 + 저자명
+          Row(
+            children: [
+              ClipOval(
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  color: Colors.grey[200],
+                  child: _getResonerImagePath(quoteId) != null
+                      ? Image.asset(
+                          _getResonerImagePath(quoteId)!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(Icons.person, size: 20, color: Colors.grey[400]);
+                          },
+                        )
+                      : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          // 명언 텍스트 (중앙 정렬, 이탤릭)
+          const SizedBox(height: 14),
+          // 명언 텍스트
           Text(
             content,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.left,
             style: TextStyle(
-              fontSize: 15,
-              fontStyle: FontStyle.italic,
+              fontSize: 17,
+              fontWeight: FontWeight.w300,
               color: Colors.grey[800],
               height: 1.6,
             ),
           ),
-          const SizedBox(height: 16),
-          // 저자명 (대문자 스타일)
-          Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[500],
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           // 버튼 영역
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -396,8 +409,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   quoteId != null && _savedQuoteIds.contains(quoteId)
                       ? 'assets/heart2.png'
                       : 'assets/heart1.png',
-                  width: 24,
-                  height: 24,
+                  width: 32,
+                  height: 32,
                 ),
                 tooltip: '좋아요',
               ),
@@ -406,13 +419,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   _shareContent(title, content);
                 },
                 icon: const Icon(Icons.share),
-                iconSize: 20,
+                iconSize: 28,
                 color: Colors.grey[600],
                 tooltip: '공유하기',
               ),
             ],
           ),
         ],
+      ),
       ),
     );
   }
