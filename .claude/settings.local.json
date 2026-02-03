@@ -5,7 +5,22 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd CLAUDE.md documentation\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(cd /d e:healing_hi)",
-      "Bash(flutter pub get:*)"
+      "Bash(flutter pub get:*)",
+      "Bash(dir:*)",
+      "Bash(node --version:*)",
+      "Bash(npm:*)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter clean:*)",
+      "Bash(flutter devices:*)",
+      "Bash(npx --version)",
+      "mcp__supabase__execute_sql"
+    ],
+    "additionalDirectories": [
+      "e:\\healing_hi"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

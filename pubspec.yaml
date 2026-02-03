@@ -48,6 +48,9 @@ dependencies:
   # Image picker
   image_picker: ^1.1.2
 
+  # Home screen widget
+  home_widget: ^0.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

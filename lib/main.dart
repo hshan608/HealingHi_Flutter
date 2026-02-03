@@ -5,23 +5,107 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:home_widget/home_widget.dart';
 import 'dart:io';
 import 'dart:convert';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
 
+// 위젯 데이터 관리 클래스
+class WidgetDataManager {
+  // 위젯 초기화
+  static Future<void> initializeWidgetData() async {
+    try {
+      await updateWidgetQuotes();
+    } catch (e) {
+      print('위젯 초기화 오류: $e');
+    }
+  }
+
+  // Supabase에서 명언을 가져와서 위젯에 전달
+  static Future<void> updateWidgetQuotes() async {
+    try {
+      // Supabase에서 30개의 명언 가져오기
+      final response = await supabase
+          .from('quotes')
+          .select('id, text_kr, resoner_kr')
+          .order('created_at', ascending: false)
+          .limit(30);
+
+      if (response.isEmpty) {
+        print('명언 데이터가 없습니다.');
+        return;
+      }
+
+      // JSON 배열로 변환
+      final quotes = response.map((quote) {
+        return {
+          'id': quote['id']?.toString() ?? '',
+          'text_kr': quote['text_kr'] ?? '',
+          'resoner_kr': quote['resoner_kr'] ?? '알 수 없음',
+        };
+      }).toList();
+
+      // SharedPreferences에 저장
+      await HomeWidget.saveWidgetData<String>(
+        'quote_data',
+        jsonEncode(quotes),
+      );
+
+      // 위젯 업데이트 요청
+      await HomeWidget.updateWidget(
+        androidName: 'QuoteWidgetProvider',
+      );
+
+      print('위젯 데이터 업데이트 완료: ${quotes.length}개 명언');
+      print('저장된 데이터 샘플: ${quotes.first}');
+    } catch (e) {
+      print('위젯 데이터 업데이트 오류: $e');
+    }
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // .env 파일 로드
-  await dotenv.load(fileName: '.env');
+  try {
+    // .env 파일 로드
+    print('✅ .env 파일 로드 시작...');
+    await dotenv.load(fileName: '.env');
+    print('✅ .env 파일 로드 완료');
 
-  // Supabase 초기화
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
+    final supabaseUrl = dotenv.env['SUPABASE_URL'];
+    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'];
+
+    print('✅ Supabase URL: $supabaseUrl');
+    print('✅ Supabase Key 존재 여부: ${supabaseKey != null && supabaseKey.isNotEmpty}');
+
+    if (supabaseUrl == null || supabaseUrl.isEmpty) {
+      throw Exception('❌ SUPABASE_URL이 .env 파일에 없습니다');
+    }
+    if (supabaseKey == null || supabaseKey.isEmpty) {
+      throw Exception('❌ SUPABASE_ANON_KEY가 .env 파일에 없습니다');
+    }
+
+    // Supabase 초기화
+    print('✅ Supabase 초기화 시작...');
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseKey,
+    );
+    print('✅ Supabase 초기화 완료');
+
+    // 위젯 데이터 초기화
+    print('✅ 위젯 데이터 초기화 시작...');
+    await WidgetDataManager.initializeWidgetData();
+    print('✅ 위젯 데이터 초기화 완료');
+
+  } catch (e, stackTrace) {
+    print('❌❌❌ 초기화 오류 발생 ❌❌❌');
+    print('오류 메시지: $e');
+    print('스택 트레이스: $stackTrace');
+  }
 
   runApp(const MyApp());
 }
@@ -161,19 +245,50 @@ class _HomeScreenState extends State<HomeScreen> {
     return _resonerImages[quoteId];
   }
 
+  // Supabase 연결 테스트
+  Future<void> _testSupabaseConnection() async {
+    try {
+      print('🔍 Supabase 연결 테스트 시작...');
+
+      // 간단한 쿼리로 연결 테스트
+      final response = await supabase
+          .from('quotes')
+          .select('count')
+          .limit(1);
+
+      print('✅ Supabase 연결 성공!');
+      print('✅ 응답 데이터: $response');
+    } catch (error, stackTrace) {
+      print('❌ Supabase 연결 실패!');
+      print('❌ 에러: $error');
+      print('❌ 스택 트레이스: $stackTrace');
+    }
+  }
+
   // Supabase에서 명언 데이터 가져오기
   Future<void> _loadQuotes() async {
     try {
+      print('📖 명언 데이터 로드 시작...');
+
+      // 연결 테스트
+      await _testSupabaseConnection();
+
       final response = await supabase
           .from('quotes')
           .select()
           .order('created_at', ascending: false);
 
+      print('✅ 명언 데이터 로드 성공: ${response.length}개');
+
       setState(() {
         _quotes = List<Map<String, dynamic>>.from(response);
         _isLoading = false;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
+      print('❌ 명언 데이터 로드 실패');
+      print('❌ 에러: $error');
+      print('❌ 스택 트레이스: $stackTrace');
+
       setState(() {
         _isLoading = false;
       });
