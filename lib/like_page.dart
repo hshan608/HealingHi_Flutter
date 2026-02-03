@@ -332,7 +332,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                 title,
                 style: const TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w800,
                   color: Colors.black87,
                 ),
               ),
@@ -344,7 +344,8 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
             content,
             textAlign: TextAlign.left,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 17,
+              fontWeight: FontWeight.w300,
               color: Colors.grey[800],
               height: 1.6,
             ),
@@ -358,7 +359,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                 onPressed: () {
                   _removeFromBookmark(quoteId);
                 },
-                icon: Image.asset('assets/heart2.png', width: 24, height: 24),
+                icon: Image.asset('assets/heart2.png', width: 32, height: 32),
                 tooltip: '보관함에서 삭제',
               ),
               IconButton(
@@ -366,7 +367,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                   _shareContent(title, content);
                 },
                 icon: const Icon(Icons.share),
-                iconSize: 20,
+                iconSize: 28,
                 color: Colors.grey[600],
                 tooltip: '공유하기',
               ),

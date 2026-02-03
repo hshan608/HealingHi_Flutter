@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
+import 'dart:convert';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -28,10 +29,13 @@ class _SearchScreenState extends State<SearchScreen> {
   int? _userIdx;
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
+  Map<String, String> _resonerImages = {}; // 영어이름(소문자) -> 이미지경로
+  Map<String, String> _authorEngMap = {}; // resoner_kr -> resoner_eng
 
   @override
   void initState() {
     super.initState();
+    _loadResonerImages();
     _loadQuotes();
     _initUserIdentity();
   }
@@ -42,6 +46,46 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  // assets/resoner/ 폴더의 이미지를 영어 이름으로 매핑
+  Future<void> _loadResonerImages() async {
+    try {
+      final manifestContent = await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+
+      final resonerFiles = manifestMap.keys
+          .where((path) => path.startsWith('assets/resoner/'))
+          .toList();
+
+      final Map<String, String> imageMap = {};
+      for (final path in resonerFiles) {
+        final fileName = path.split('/').last;
+        // 파일명에서 ID 부분 제거하고 영어 이름 추출
+        // 예: "10001_Maya Angelou.png" -> "Maya Angelou"
+        // 예: "10003_10021_Abraham Lincoln.png" -> "Abraham Lincoln"
+        final nameWithExt = fileName.replaceAll(RegExp(r'^(\d+_)+'), '');
+        final name = nameWithExt.replaceAll('.png', '');
+        if (name.isNotEmpty && name != 'None') {
+          imageMap[name.toLowerCase()] = path;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _resonerImages = imageMap;
+        });
+      }
+    } catch (e) {
+      print('Resoner 이미지 로드 실패: $e');
+    }
+  }
+
+  // resoner_kr로 저자 이미지 경로 가져오기
+  String? _getAuthorImagePath(String authorKr) {
+    final engName = _authorEngMap[authorKr];
+    if (engName == null) return null;
+    return _resonerImages[engName.toLowerCase()];
+  }
+
   // Supabase에서 명언 데이터 가져오기
   Future<void> _loadQuotes() async {
     try {
@@ -50,9 +94,22 @@ class _SearchScreenState extends State<SearchScreen> {
           .select()
           .order('created_at', ascending: false);
 
+      final quotes = List<Map<String, dynamic>>.from(response);
+
+      // resoner_kr -> resoner_eng 매핑 생성
+      final Map<String, String> engMap = {};
+      for (final quote in quotes) {
+        final kr = quote['resoner_kr']?.toString();
+        final eng = quote['resoner_eng']?.toString();
+        if (kr != null && eng != null && eng.isNotEmpty) {
+          engMap[kr] = eng;
+        }
+      }
+
       setState(() {
-        _allQuotes = List<Map<String, dynamic>>.from(response);
+        _allQuotes = quotes;
         _filteredQuotes = _allQuotes; // 초기에는 모든 명언 표시
+        _authorEngMap = engMap;
         _isLoading = false;
       });
     } catch (error) {
@@ -294,7 +351,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFCCFFCC),
+      backgroundColor: const Color(0xFFDDE7DE),
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,10 +698,21 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey[300],
-            child: Icon(Icons.person, color: Colors.grey[600], size: 24),
+          ClipOval(
+            child: Container(
+              width: 40,
+              height: 40,
+              color: Colors.grey[300],
+              child: _getAuthorImagePath(author) != null
+                  ? Image.asset(
+                      _getAuthorImagePath(author)!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(Icons.person, color: Colors.grey[600], size: 24);
+                      },
+                    )
+                  : Icon(Icons.person, color: Colors.grey[600], size: 24),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -678,7 +746,7 @@ class _SearchScreenState extends State<SearchScreen> {
             title,
             style: const TextStyle(
               fontSize: 15,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w800,
               color: Colors.black87,
             ),
           ),
@@ -687,6 +755,7 @@ class _SearchScreenState extends State<SearchScreen> {
             content,
             style: TextStyle(
               fontSize: 13,
+              fontWeight: FontWeight.w300,
               color: Colors.grey[600],
               height: 1.4,
             ),
