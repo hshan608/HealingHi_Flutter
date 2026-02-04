@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'nickname_generator.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -22,12 +24,29 @@ class _MyPageScreenState extends State<MyPageScreen> {
   String _profileImageUrl = '';
   String _name = '';
   String _selectedLanguage = 'kor'; // 기본값: 한국어
-  String _shareLevel = '실버 / 1개';
-  int _shareProgress = 66; // 퍼센트
-  int _totalShares = 100;
-  int _currentShares = 66;
+  int _shareCount = 0;
   String? _deviceId;
   bool _isLoading = true;
+
+  // 공유 등급 계산
+  String get _shareLevel {
+    if (_shareCount >= 100) return '골드 / $_shareCount개';
+    if (_shareCount >= 10) return '실버 / $_shareCount개';
+    if (_shareCount >= 1) return '브론즈 / $_shareCount개';
+    return '없음 / 0개';
+  }
+
+  int get _shareTierTarget {
+    if (_shareCount >= 100) return 100;
+    if (_shareCount >= 10) return 100;
+    if (_shareCount >= 1) return 10;
+    return 1;
+  }
+
+  int get _shareProgress {
+    final target = _shareTierTarget;
+    return ((_shareCount / target) * 100).clamp(0, 100).toInt();
+  }
 
   // 언어 옵션
   final Map<String, String> _languageOptions = {'kor': '한국어', 'eng': '영어'};
@@ -88,6 +107,17 @@ class _MyPageScreenState extends State<MyPageScreen> {
     if (_deviceId == null) return;
 
     try {
+      // 공유 카운트 로드 (device_id 기반 - users 행 없이도 동작)
+      final shareData = await supabase
+          .from('device_shares')
+          .select('share_count')
+          .eq('device_id', _deviceId!)
+          .maybeSingle();
+
+      final shareCount = shareData != null
+          ? (shareData['share_count'] ?? 0) as int
+          : 0;
+
       final response = await supabase
           .from('users')
           .select()
@@ -100,14 +130,16 @@ class _MyPageScreenState extends State<MyPageScreen> {
           _name = response['user_id'] ?? '';
           _profileImageUrl = response['profile_image_url'] ?? '';
           _selectedLanguage = response['language'] ?? 'kor';
+          _shareCount = shareCount;
           _nameController.text = _name;
           _isLoading = false;
         });
       } else {
-        // 데이터가 없으면 빈 상태로 유지
+        // 데이터가 없으면 랜덤 닉네임 표시
         setState(() {
           _nameController.text = '';
           _selectedLanguage = 'kor';
+          _shareCount = shareCount;
           _isLoading = false;
         });
       }
@@ -260,10 +292,32 @@ class _MyPageScreenState extends State<MyPageScreen> {
     }
 
     try {
+      final newName = _nameController.text.trim();
+
+      // 닉네임 중복 확인 (자신의 device_id 제외)
+      final existing = await supabase
+          .from('users')
+          .select('device_id')
+          .eq('user_id', newName)
+          .neq('device_id', _deviceId!)
+          .maybeSingle();
+
+      if (existing != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('중복된 닉네임입니다.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
       // Supabase users 테이블에 데이터 저장
       await supabase.from('users').upsert({
         'device_id': _deviceId,
-        'user_id': _nameController.text.trim(),
+        'user_id': newName,
         'profile_image_url': _profileImageUrl.isNotEmpty
             ? _profileImageUrl
             : null,
@@ -280,7 +334,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       }
 
       setState(() {
-        _name = _nameController.text.trim();
+        _name = newName;
       });
     } catch (e) {
       if (mounted) {
@@ -402,13 +456,21 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 ),
                 const SizedBox(height: 40),
 
-                // 이름 입력 필드
-                _buildInputField(
-                  label: '이름',
-                  controller: _nameController,
-                  hintText: '이름을 입력하세요',
-                  hasCheckIcon: true,
-                ),
+                // 이름 입력 필드 (공유 1회 이상이면 편집 가능)
+                if (_shareCount >= 1)
+                  _buildInputField(
+                    label: '이름',
+                    controller: _nameController,
+                    hintText: '이름을 입력하세요',
+                    hasCheckIcon: true,
+                  )
+                else
+                  _buildReadOnlyNameField(
+                    label: '이름',
+                    value: _deviceId != null
+                        ? generateNickname(_deviceId!)
+                        : '로딩중...',
+                  ),
                 const SizedBox(height: 20),
 
                 // 언어 선택 필드
@@ -531,6 +593,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
           ),
           child: TextField(
             controller: controller,
+            keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.done,
+            enableInteractiveSelection: true,
+            onTap: () {
+              SystemChannels.textInput.invokeMethod('TextInput.show');
+            },
             decoration: InputDecoration(
               hintText: hintText,
               hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
@@ -557,6 +625,58 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 vertical: 16,
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadOnlyNameField({
+    required String label,
+    required String value,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(25),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 1,
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Text(
+            '명언을 1회 이상 공유하면 닉네임을 설정할 수 있어요!',
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
         ),
       ],
@@ -664,7 +784,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '$_currentShares/$_totalShares',
+                    '$_shareCount/$_shareTierTarget',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,

@@ -258,6 +258,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
+  // 공유 카운트 증가
+  Future<void> _incrementShareCount() async {
+    if (_deviceId == null) return;
+    try {
+      await supabase.rpc(
+        'increment_share_count',
+        params: {'p_device_id': _deviceId},
+      );
+    } catch (e) {
+      print('공유 카운트 업데이트 실패: $e');
+    }
+  }
+
   // 공유하기 함수
   void _shareContent(String title, String content) async {
     try {
@@ -265,11 +278,13 @@ class _HomeScreenState extends State<HomeScreen> {
         '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
         subject: title,
       );
+      await _incrementShareCount();
     } catch (e) {
       // 공유 기능이 실패하면 클립보드에 복사
       await Clipboard.setData(
         ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
       );
+      await _incrementShareCount();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -284,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: const Color(0xFFDDE7DE),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+          padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 32.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -325,7 +340,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildContentBox(String title, String content, String? quoteId) {
-    return GestureDetector(
+    return _AnimatedCardItem(
+      child: GestureDetector(
       onDoubleTap: () async {
         await Clipboard.setData(
           ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
@@ -401,18 +417,9 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                onPressed: () {
-                  _toggleUserQuote(quoteId);
-                },
-                icon: Image.asset(
-                  quoteId != null && _savedQuoteIds.contains(quoteId)
-                      ? 'assets/heart2.png'
-                      : 'assets/heart1.png',
-                  width: 32,
-                  height: 32,
-                ),
-                tooltip: '좋아요',
+              _AnimatedHeartButton(
+                isSaved: quoteId != null && _savedQuoteIds.contains(quoteId),
+                onTap: () => _toggleUserQuote(quoteId),
               ),
               IconButton(
                 onPressed: () {
@@ -427,6 +434,124 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      ),
+    ),
+    );
+  }
+}
+
+class _AnimatedHeartButton extends StatefulWidget {
+  final bool isSaved;
+  final VoidCallback onTap;
+
+  const _AnimatedHeartButton({required this.isSaved, required this.onTap});
+
+  @override
+  State<_AnimatedHeartButton> createState() => _AnimatedHeartButtonState();
+}
+
+class _AnimatedHeartButtonState extends State<_AnimatedHeartButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.4)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.4, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticIn)),
+        weight: 50,
+      ),
+    ]).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    _controller.forward(from: 0);
+    widget.onTap();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: IconButton(
+        onPressed: _handleTap,
+        icon: Image.asset(
+          widget.isSaved ? 'assets/heart2.png' : 'assets/heart1.png',
+          width: 32,
+          height: 32,
+        ),
+        tooltip: '좋아요',
+      ),
+    );
+  }
+}
+
+class _AnimatedCardItem extends StatefulWidget {
+  final Widget child;
+  const _AnimatedCardItem({required this.child});
+
+  @override
+  State<_AnimatedCardItem> createState() => _AnimatedCardItemState();
+}
+
+class _AnimatedCardItemState extends State<_AnimatedCardItem>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.15),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    ));
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: widget.child,
       ),
     );
   }

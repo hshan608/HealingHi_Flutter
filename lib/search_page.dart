@@ -19,6 +19,7 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   List<Map<String, dynamic>> _allQuotes = [];
   List<Map<String, dynamic>> _filteredQuotes = [];
   List<String> _uniqueAuthors = []; // 저자 검색용 고유 저자 목록
@@ -43,6 +44,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -328,6 +330,19 @@ class _SearchScreenState extends State<SearchScreen> {
     return null;
   }
 
+  // 공유 카운트 증가
+  Future<void> _incrementShareCount() async {
+    if (_deviceId == null) return;
+    try {
+      await supabase.rpc(
+        'increment_share_count',
+        params: {'p_device_id': _deviceId},
+      );
+    } catch (e) {
+      print('공유 카운트 업데이트 실패: $e');
+    }
+  }
+
   // 공유하기 함수
   void _shareContent(String title, String content) async {
     try {
@@ -335,11 +350,13 @@ class _SearchScreenState extends State<SearchScreen> {
         '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
         subject: title,
       );
+      await _incrementShareCount();
     } catch (e) {
       // 공유 기능이 실패하면 클립보드에 복사
       await Clipboard.setData(
         ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
       );
+      await _incrementShareCount();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -350,18 +367,21 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFDDE7DE),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 상단 영역 (패딩 있음)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        backgroundColor: const Color(0xFFDDE7DE),
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 상단 영역 (패딩 있음)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   // 상단 제목
                   const Row(
                     children: [
@@ -399,7 +419,15 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                     child: TextField(
                       controller: _searchController,
+                      focusNode: _searchFocusNode,
                       onChanged: _performSearch,
+                      keyboardType: TextInputType.text,
+                      textInputAction: TextInputAction.search,
+                      enableInteractiveSelection: true,
+                      onSubmitted: _performSearch,
+                      onTap: () {
+                        SystemChannels.textInput.invokeMethod('TextInput.show');
+                      },
                       decoration: InputDecoration(
                         hintText: '입력',
                         hintStyle: TextStyle(
@@ -571,7 +599,8 @@ class _SearchScreenState extends State<SearchScreen> {
                     : _buildSearchResults(),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -221,16 +221,31 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     }
   }
 
+  // 공유 카운트 증가
+  Future<void> _incrementShareCount() async {
+    if (_deviceId == null) return;
+    try {
+      await supabase.rpc(
+        'increment_share_count',
+        params: {'p_device_id': _deviceId},
+      );
+    } catch (e) {
+      print('공유 카운트 업데이트 실패: $e');
+    }
+  }
+
   void _shareContent(String title, String content) async {
     try {
       await Share.share(
         '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
         subject: title,
       );
+      await _incrementShareCount();
     } catch (e) {
       await Clipboard.setData(
         ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
       );
+      await _incrementShareCount();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
