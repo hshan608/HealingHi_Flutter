@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:like_button/like_button.dart';
 import 'dart:io';
 import 'dart:convert';
 
@@ -300,6 +301,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                               '${quote['resoner_kr']}',
                               quote['text_kr'],
                               quoteId,
+                              quote['tag_kr']?.toString(),
                             );
                           },
                         ),
@@ -312,13 +314,21 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     );
   }
 
-  Widget _buildBookmarkCard(String title, String content, String? quoteId) {
+  Widget _buildBookmarkCard(String title, String content, String? quoteId, String? tag) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16.0),
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
       decoration: BoxDecoration(
-        color: const Color(0xFFFDF0EE),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -330,16 +340,16 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                 child: Container(
                   width: 36,
                   height: 36,
-                  color: Colors.grey[300],
+                  color: Colors.grey[200],
                   child: _getResonerImagePath(quoteId) != null
                       ? Image.asset(
                           _getResonerImagePath(quoteId)!,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
-                            return Icon(Icons.person, size: 20, color: Colors.grey[600]);
+                            return Icon(Icons.person, size: 20, color: Colors.grey[400]);
                           },
                         )
-                      : Icon(Icons.person, size: 20, color: Colors.grey[600]),
+                      : Icon(Icons.person, size: 20, color: Colors.grey[400]),
                 ),
               ),
               const SizedBox(width: 10),
@@ -354,7 +364,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          // 명언 텍스트 (왼쪽 정렬)
+          // 명언 텍스트
           Text(
             content,
             textAlign: TextAlign.left,
@@ -365,25 +375,59 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
               height: 1.6,
             ),
           ),
-          const SizedBox(height: 12),
-          // 버튼 영역 (중앙)
+          const SizedBox(height: 16),
+          // 하단: 태그 + 좋아요/공유 버튼
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                onPressed: () {
-                  _removeFromBookmark(quoteId);
+              // 태그
+              if (tag != null && tag.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '# $tag',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              // 좋아요(삭제) 버튼
+              LikeButton(
+                size: 32,
+                isLiked: true,
+                circleColor: const CircleColor(
+                  start: Color(0xFFFF5252),
+                  end: Color(0xFFFF1744),
+                ),
+                bubblesColor: const BubblesColor(
+                  dotPrimaryColor: Color(0xFFFF5252),
+                  dotSecondaryColor: Color(0xFFFF8A80),
+                ),
+                likeBuilder: (bool isLiked) {
+                  return Image.asset(
+                    isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
+                    width: 32,
+                    height: 32,
+                  );
                 },
-                icon: Image.asset('assets/heart2.png', width: 32, height: 32),
-                tooltip: '보관함에서 삭제',
+                onTap: (bool isLiked) async {
+                  await _removeFromBookmark(quoteId);
+                  return false;
+                },
               ),
+              // 공유 버튼
               IconButton(
                 onPressed: () {
                   _shareContent(title, content);
                 },
-                icon: const Icon(Icons.share),
-                iconSize: 28,
-                color: Colors.grey[600],
+                icon: Icon(Icons.share, color: Colors.grey[600]),
+                iconSize: 24,
                 tooltip: '공유하기',
               ),
             ],

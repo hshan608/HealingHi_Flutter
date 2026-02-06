@@ -51,6 +51,12 @@ dependencies:
   # Home screen widget
   home_widget: ^0.6.0
 
+  # Twitter-style like animation
+  like_button: ^2.0.5
+
+  # Image cropper
+  image_cropper: ^8.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
