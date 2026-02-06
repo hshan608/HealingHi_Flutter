@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:like_button/like_button.dart';
 import 'dart:io';
 import 'dart:convert';
 
@@ -715,47 +716,251 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  // 저자의 명언 목록 팝업
+  void _showAuthorQuotesDialog(String author) {
+    final authorQuotes = _allQuotes
+        .where((q) => q['resoner_kr']?.toString() == author)
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFDDE7DE),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // 핸들 바
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[400],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  // 저자 헤더
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    child: Row(
+                      children: [
+                        ClipOval(
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            color: Colors.grey[300],
+                            child: _getAuthorImagePath(author) != null
+                                ? Image.asset(
+                                    _getAuthorImagePath(author)!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(Icons.person, color: Colors.grey[600], size: 28);
+                                    },
+                                  )
+                                : Icon(Icons.person, color: Colors.grey[600], size: 28),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                author,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '명언 ${authorQuotes.length}개',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // 명언 리스트
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: authorQuotes.length,
+                      itemBuilder: (context, index) {
+                        final quote = authorQuotes[index];
+                        final quoteId = _extractQuoteId(quote);
+                        final tag = quote['tag_kr']?.toString();
+                        return _buildAuthorQuoteCard(
+                          quote['text_kr']?.toString() ?? '',
+                          quoteId,
+                          tag,
+                          author,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 저자 팝업 내 명언 카드
+  Widget _buildAuthorQuoteCard(String content, String? quoteId, String? tag, String author) {
+    return StatefulBuilder(
+      builder: (context, setCardState) {
+        final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 1,
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                content,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w300,
+                  color: Colors.grey[800],
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  if (tag != null && tag.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '# $tag',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  LikeButton(
+                    size: 28,
+                    isLiked: isSaved,
+                    circleColor: const CircleColor(
+                      start: Color(0xFFFF5252),
+                      end: Color(0xFFFF1744),
+                    ),
+                    bubblesColor: const BubblesColor(
+                      dotPrimaryColor: Color(0xFFFF5252),
+                      dotSecondaryColor: Color(0xFFFF8A80),
+                    ),
+                    likeBuilder: (bool isLiked) {
+                      return Image.asset(
+                        isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
+                        width: 28,
+                        height: 28,
+                      );
+                    },
+                    onTap: (bool isLiked) async {
+                      await _toggleUserQuote(quoteId);
+                      setCardState(() {});
+                      if (mounted) setState(() {});
+                      return !isLiked;
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _shareContent(author, content),
+                    child: Icon(Icons.share, color: Colors.grey[600], size: 22),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // 저자 아이템 위젯
   Widget _buildAuthorItem(String author) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8.0),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
-        children: [
-          ClipOval(
-            child: Container(
-              width: 40,
-              height: 40,
-              color: Colors.grey[300],
-              child: _getAuthorImagePath(author) != null
-                  ? Image.asset(
-                      _getAuthorImagePath(author)!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Icon(Icons.person, color: Colors.grey[600], size: 24);
-                      },
-                    )
-                  : Icon(Icons.person, color: Colors.grey[600], size: 24),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              author,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
+    return GestureDetector(
+      onTap: () => _showAuthorQuotesDialog(author),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(8.0),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Row(
+          children: [
+            ClipOval(
+              child: Container(
+                width: 40,
+                height: 40,
+                color: Colors.grey[300],
+                child: _getAuthorImagePath(author) != null
+                    ? Image.asset(
+                        _getAuthorImagePath(author)!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(Icons.person, color: Colors.grey[600], size: 24);
+                        },
+                      )
+                    : Icon(Icons.person, color: Colors.grey[600], size: 24),
               ),
             ),
-          ),
-          Icon(Icons.chevron_right, color: Colors.grey[400]),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                author,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey[400]),
+          ],
+        ),
       ),
     );
   }

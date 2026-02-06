@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'dart:io';
 import 'nickname_generator.dart';
 
@@ -27,6 +28,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   int _shareCount = 0;
   String? _deviceId;
   bool _isLoading = true;
+  bool _nicknameSaved = false; // 닉네임 저장 성공 상태
 
   // 공유 등급 계산
   String get _shareLevel {
@@ -201,12 +203,35 @@ class _MyPageScreenState extends State<MyPageScreen> {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 75,
       );
 
       if (image == null) return;
+
+      // 이미지 크롭
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: image.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        maxWidth: 512,
+        maxHeight: 512,
+        compressQuality: 75,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: '프로필 사진 편집',
+            toolbarColor: const Color(0xFFF5F5F5),
+            toolbarWidgetColor: Colors.black87,
+            activeControlsWidgetColor: Colors.green,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(
+            title: '프로필 사진 편집',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+
+      if (croppedFile == null) return;
 
       if (_deviceId == null) {
         if (mounted) {
@@ -225,8 +250,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
       }
 
       // 파일 읽기
-      final bytes = await File(image.path).readAsBytes();
-      final fileExt = image.path.split('.').last;
+      final bytes = await File(croppedFile.path).readAsBytes();
+      final fileExt = croppedFile.path.split('.').last;
       final fileName = '$_deviceId.$fileExt';
       final filePath = 'profiles/$fileName';
 
@@ -280,7 +305,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('이름을 입력해주세요')));
+      ).showSnackBar(const SnackBar(content: Text('닉네임을 입력해주세요')));
       return;
     }
 
@@ -324,17 +349,27 @@ class _MyPageScreenState extends State<MyPageScreen> {
         'language': _selectedLanguage,
       }, onConflict: 'device_id').select();
 
+      setState(() {
+        _name = newName;
+        _nicknameSaved = true;
+      });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('저장되었습니다!'),
+            content: Text('닉네임이 저장되었습니다.'),
             backgroundColor: Colors.green,
           ),
         );
       }
 
-      setState(() {
-        _name = newName;
+      // 2초 후 체크박스를 다시 회색으로
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _nicknameSaved = false;
+          });
+        }
       });
     } catch (e) {
       if (mounted) {
@@ -459,14 +494,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 // 이름 입력 필드 (공유 1회 이상이면 편집 가능)
                 if (_shareCount >= 1)
                   _buildInputField(
-                    label: '이름',
+                    label: '닉네임',
                     controller: _nameController,
-                    hintText: '이름을 입력하세요',
+                    hintText: '닉네임을 입력하세요',
                     hasCheckIcon: true,
                   )
                 else
                   _buildReadOnlyNameField(
-                    label: '이름',
+                    label: '닉네임',
                     value: _deviceId != null
                         ? generateNickname(_deviceId!)
                         : '로딩중...',
@@ -605,16 +640,30 @@ class _MyPageScreenState extends State<MyPageScreen> {
               suffixIcon: hasCheckIcon
                   ? GestureDetector(
                       onTap: _saveUserToSupabase,
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeInOut,
                         margin: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          color: Colors.green,
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: _nicknameSaved ? Colors.green : Colors.grey[400],
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 16,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          transitionBuilder: (child, animation) {
+                            return ScaleTransition(
+                              scale: animation,
+                              child: child,
+                            );
+                          },
+                          child: Icon(
+                            Icons.check,
+                            key: ValueKey<bool>(_nicknameSaved),
+                            color: Colors.white,
+                            size: _nicknameSaved ? 20 : 16,
+                          ),
                         ),
                       ),
                     )

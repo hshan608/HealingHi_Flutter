@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:like_button/like_button.dart';
 import 'dart:io';
 import 'dart:convert';
 
@@ -327,6 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               '${quote['resoner_kr']}',
                               quote['text_kr'],
                               quoteId,
+                              quote['tag_kr']?.toString(),
                             );
                           },
                         ),
@@ -339,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildContentBox(String title, String content, String? quoteId) {
+  Widget _buildContentBox(String title, String content, String? quoteId, String? tag) {
     return _AnimatedCardItem(
       child: GestureDetector(
       onDoubleTap: () async {
@@ -412,22 +414,59 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 1.6,
             ),
           ),
-          const SizedBox(height: 12),
-          // 버튼 영역
+          const SizedBox(height: 16),
+          // 하단: 태그 + 좋아요/공유 버튼
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _AnimatedHeartButton(
-                isSaved: quoteId != null && _savedQuoteIds.contains(quoteId),
-                onTap: () => _toggleUserQuote(quoteId),
+              // 태그
+              if (tag != null && tag.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '# $tag',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              // 좋아요 버튼
+              LikeButton(
+                size: 32,
+                isLiked: quoteId != null && _savedQuoteIds.contains(quoteId),
+                circleColor: const CircleColor(
+                  start: Color(0xFFFF5252),
+                  end: Color(0xFFFF1744),
+                ),
+                bubblesColor: const BubblesColor(
+                  dotPrimaryColor: Color(0xFFFF5252),
+                  dotSecondaryColor: Color(0xFFFF8A80),
+                ),
+                likeBuilder: (bool isLiked) {
+                  return Image.asset(
+                    isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
+                    width: 32,
+                    height: 32,
+                  );
+                },
+                onTap: (bool isLiked) async {
+                  await _toggleUserQuote(quoteId);
+                  return !isLiked;
+                },
               ),
+              // 공유 버튼
               IconButton(
                 onPressed: () {
                   _shareContent(title, content);
                 },
-                icon: const Icon(Icons.share),
-                iconSize: 28,
-                color: Colors.grey[600],
+                icon: Icon(Icons.share, color: Colors.grey[600]),
+                iconSize: 24,
                 tooltip: '공유하기',
               ),
             ],
@@ -440,69 +479,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _AnimatedHeartButton extends StatefulWidget {
-  final bool isSaved;
-  final VoidCallback onTap;
-
-  const _AnimatedHeartButton({required this.isSaved, required this.onTap});
-
-  @override
-  State<_AnimatedHeartButton> createState() => _AnimatedHeartButtonState();
-}
-
-class _AnimatedHeartButtonState extends State<_AnimatedHeartButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _scaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 1.4)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 50,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.4, end: 1.0)
-            .chain(CurveTween(curve: Curves.elasticIn)),
-        weight: 50,
-      ),
-    ]).animate(_controller);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _handleTap() {
-    _controller.forward(from: 0);
-    widget.onTap();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: IconButton(
-        onPressed: _handleTap,
-        icon: Image.asset(
-          widget.isSaved ? 'assets/heart2.png' : 'assets/heart1.png',
-          width: 32,
-          height: 32,
-        ),
-        tooltip: '좋아요',
-      ),
-    );
-  }
-}
 
 class _AnimatedCardItem extends StatefulWidget {
   final Widget child;
