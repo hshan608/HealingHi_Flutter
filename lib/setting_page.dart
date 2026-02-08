@@ -207,7 +207,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
       if (image == null) return;
 
-      // 이미지 크롭
+      // 이미지 크롭 (원형 프로필 스타일)
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: image.path,
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
@@ -216,17 +216,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
         compressQuality: 75,
         uiSettings: [
           AndroidUiSettings(
-            toolbarTitle: '프로필 사진 편집',
-            toolbarColor: const Color(0xFFF5F5F5),
+            toolbarTitle: '프로필 사진',
+            toolbarColor: Colors.white,
             toolbarWidgetColor: Colors.black87,
-            activeControlsWidgetColor: Colors.green,
+            activeControlsWidgetColor: const Color(0xFF4CAF50),
+            backgroundColor: Colors.black,
+            cropStyle: CropStyle.circle,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
+            hideBottomControls: true,
+            showCropGrid: false,
           ),
           IOSUiSettings(
-            title: '프로필 사진 편집',
+            title: '프로필 사진',
             aspectRatioLockEnabled: true,
             resetAspectRatioEnabled: false,
+            rotateButtonsHidden: true,
+            rotateClockwiseButtonHidden: true,
+            aspectRatioPickerButtonHidden: true,
           ),
         ],
       );

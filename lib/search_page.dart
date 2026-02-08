@@ -24,6 +24,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _allQuotes = [];
   List<Map<String, dynamic>> _filteredQuotes = [];
   List<String> _uniqueAuthors = []; // 저자 검색용 고유 저자 목록
+  List<String> _uniqueSubjects = []; // 주제 검색용 고유 주제 목록
   bool _isLoading = true;
   String _searchType = 'author'; // 'author', 'content', 또는 'subject'
   bool _hasSearched = false;
@@ -279,6 +280,7 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _filteredQuotes = [];
         _uniqueAuthors = [];
+        _uniqueSubjects = [];
         _hasSearched = false;
       });
       return;
@@ -297,6 +299,7 @@ class _SearchScreenState extends State<SearchScreen> {
             .toSet()
             .toList();
         _uniqueAuthors = matchingAuthors;
+        _uniqueSubjects = [];
         _filteredQuotes = [];
       } else if (_searchType == 'content') {
         // 본문 검색: text_kr만 검색
@@ -306,14 +309,20 @@ class _SearchScreenState extends State<SearchScreen> {
           );
         }).toList();
         _uniqueAuthors = [];
+        _uniqueSubjects = [];
       } else {
-        // subject
-        _filteredQuotes = _allQuotes.where((quote) {
-          return (quote['tag_kr']?.toString() ?? '').toLowerCase().contains(
-            query.toLowerCase(),
-          );
-        }).toList();
+        // 주제 검색: tag_kr을 검색하고 중복 제거 (group by)
+        final matchingSubjects = _allQuotes
+            .where((quote) => (quote['tag_kr']?.toString() ?? '')
+                .toLowerCase()
+                .contains(query.toLowerCase()))
+            .map((quote) => quote['tag_kr']?.toString() ?? '')
+            .where((tag) => tag.isNotEmpty)
+            .toSet()
+            .toList();
+        _uniqueSubjects = matchingSubjects;
         _uniqueAuthors = [];
+        _filteredQuotes = [];
       }
     });
   }
@@ -661,7 +670,24 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    // 본문/주제 검색인 경우
+    // 주제 검색인 경우
+    if (_searchType == 'subject') {
+      if (_uniqueSubjects.isEmpty) {
+        return _buildNoResultsWidget();
+      }
+      return RefreshIndicator(
+        onRefresh: _loadQuotes,
+        child: ListView.builder(
+          itemCount: _uniqueSubjects.length,
+          itemBuilder: (context, index) {
+            final subject = _uniqueSubjects[index];
+            return _buildSubjectItem(subject);
+          },
+        ),
+      );
+    }
+
+    // 본문 검색인 경우
     if (_filteredQuotes.isEmpty) {
       return _buildNoResultsWidget();
     }
@@ -823,6 +849,166 @@ class _SearchScreenState extends State<SearchScreen> {
           },
         );
       },
+    );
+  }
+
+  // 주제의 명언 목록 팝업
+  void _showSubjectQuotesDialog(String subject) {
+    final subjectQuotes = _allQuotes
+        .where((q) => q['tag_kr']?.toString() == subject)
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFDDE7DE),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // 핸들 바
+                  Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[400],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  // 주제 헤더
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.tag, color: Colors.grey[600], size: 28),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                subject,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '명언 ${subjectQuotes.length}개',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // 명언 리스트
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: subjectQuotes.length,
+                      itemBuilder: (context, index) {
+                        final quote = subjectQuotes[index];
+                        final quoteId = _extractQuoteId(quote);
+                        final author = quote['resoner_kr']?.toString() ?? '';
+                        return _buildAuthorQuoteCard(
+                          quote['text_kr']?.toString() ?? '',
+                          quoteId,
+                          null, // 주제 팝업에서는 태그 대신 저자를 보여주므로 tag는 null
+                          author,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 주제 아이템 위젯
+  Widget _buildSubjectItem(String subject) {
+    final quoteCount = _allQuotes
+        .where((q) => q['tag_kr']?.toString() == subject)
+        .length;
+
+    return GestureDetector(
+      onTap: () => _showSubjectQuotesDialog(subject),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(8.0),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.tag, color: Colors.grey[600], size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subject,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    '명언 ${quoteCount}개',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey[400]),
+          ],
+        ),
+      ),
     );
   }
 
