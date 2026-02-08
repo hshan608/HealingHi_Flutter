@@ -13,7 +13,9 @@
       "Bash(flutter clean:*)",
       "Bash(flutter devices:*)",
       "Bash(npx --version)",
-      "mcp__supabase__execute_sql"
+      "mcp__supabase__execute_sql",
+      "WebFetch(domain:dribbble.com)",
+      "Bash(git commit:*)"
     ],
     "additionalDirectories": [
       "e:\\healing_hi"
