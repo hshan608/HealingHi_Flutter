@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:home_widget/home_widget.dart';
@@ -145,6 +146,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const activeGreen = Color(0xFF81A684); // 활성화 시 진한 녹색
+    const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
+
     return Scaffold(
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -155,28 +159,42 @@ class _MainScreenState extends State<MainScreen> {
             _currentIndex = index;
           });
         },
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: Colors.transparent, // 개별 색상 사용
+        unselectedItemColor: Colors.transparent, // 개별 색상 사용
         iconSize: 24,
         items: [
           BottomNavigationBarItem(
-            icon: SizedBox(
-              width: 24,
-              height: 24,
-              child: Image.asset('assets/quotes1.png', fit: BoxFit.contain),
+            icon: Icon(
+              CupertinoIcons.quote_bubble,
+              color: _currentIndex == 0 ? activeGreen : inactiveGrey,
             ),
             label: '',
           ),
-          const BottomNavigationBarItem(icon: Icon(Icons.search), label: ''),
           BottomNavigationBarItem(
-            icon: SizedBox(
-              width: 24,
-              height: 24,
-              child: Image.asset('assets/heart1-1.png', fit: BoxFit.contain),
+            icon: Icon(
+              Icons.search,
+              color: _currentIndex == 1 ? activeGreen : inactiveGrey,
             ),
             label: '',
           ),
-          const BottomNavigationBarItem(icon: Icon(Icons.person), label: ''),
+          BottomNavigationBarItem(
+            icon: Icon(
+              Icons.favorite_border,
+              color: _currentIndex == 2 ? Colors.pink : inactiveGrey,
+            ),
+            activeIcon: Icon(
+              Icons.favorite,
+              color: Colors.pink,
+            ),
+            label: '',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(
+              Icons.person,
+              color: _currentIndex == 3 ? activeGreen : inactiveGrey,
+            ),
+            label: '',
+          ),
         ],
       ),
     );
