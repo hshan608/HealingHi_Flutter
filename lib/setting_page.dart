@@ -479,19 +479,19 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           ),
                         ),
                         // 월계관 장식 이미지 사용 대신 아이콘만 표시
-                        const Positioned(
-                          top: -10,
-                          left: -10,
-                          right: -10,
-                          child: SizedBox(
-                            height: 40,
-                            child: Icon(
-                              Icons.emoji_events,
-                              color: Colors.amber,
-                              size: 30,
-                            ),
-                          ),
-                        ),
+                        // const Positioned(
+                        //   top: -10,
+                        //   left: -10,
+                        //   right: -10,
+                        //   child: SizedBox(
+                        //     height: 40,
+                        //     child: Icon(
+                        //       Icons.emoji_events,
+                        //       color: Colors.amber,
+                        //       size: 30,
+                        //     ),
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),
