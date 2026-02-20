@@ -6,6 +6,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:like_button/like_button.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -72,16 +73,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return _resonerImages[quoteId];
   }
 
-  // Supabase에서 명언 데이터 가져오기
+  // Supabase에서 명언 데이터 가져오기 (랜덤 순서)
   Future<void> _loadQuotes() async {
     try {
-      final response = await supabase
-          .from('quotes')
-          .select()
-          .order('created_at', ascending: false);
+      final response = await supabase.from('quotes').select();
+
+      final list = List<Map<String, dynamic>>.from(response);
+      list.shuffle(Random());
 
       setState(() {
-        _quotes = List<Map<String, dynamic>>.from(response);
+        _quotes = list;
         _isLoading = false;
       });
     } catch (error) {

@@ -388,7 +388,7 @@ class _SearchScreenState extends State<SearchScreen> {
             children: [
               // 상단 영역 (패딩 있음)
               Padding(
-                padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 12.0),
+                padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 12.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
