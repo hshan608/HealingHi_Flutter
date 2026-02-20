@@ -261,7 +261,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
       backgroundColor: const Color(0xFFF8E3DF),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+          padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 32.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

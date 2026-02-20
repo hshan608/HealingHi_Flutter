@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'dart:io';
 import 'nickname_generator.dart';
+import 'admin_page.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -407,17 +408,33 @@ class _MyPageScreenState extends State<MyPageScreen> {
             child: Column(
               children: [
                 // 상단 제목
-                const Row(
-                  children: [
-                    Text(
-                      '프로필 설정',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                GestureDetector(
+                  onLongPress: () {
+                    const allowedIds = {
+                      'BP2A.250605.031.A3',
+                      'BE2A.250530.026.D1',
+                    };
+                    if (_deviceId == null || !allowedIds.contains(_deviceId)) {
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminPage()),
+                    );
+                  },
+                  child: const Row(
+                    children: [
+                      Text(
+                        '프로필 설정',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 30),
 
@@ -830,11 +847,30 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  void _showQuoteRequestForm() {
+  Future<void> _showQuoteRequestForm() async {
     final quoteController = TextEditingController();
     final authorController = TextEditingController();
-    final categoryController = TextEditingController();
     bool isSubmitted = false;
+    String? selectedCategory;
+    List<String> categories = [];
+
+    // Supabase에서 카테고리 목록 가져오기
+    try {
+      final result = await supabase
+          .from('quotes')
+          .select('tag_kr')
+          .not('tag_kr', 'is', null);
+      final Set<String> seen = {};
+      for (final row in result as List) {
+        final tag = row['tag_kr']?.toString();
+        if (tag != null && tag.isNotEmpty) seen.add(tag);
+      }
+      categories = seen.toList()..sort();
+    } catch (e) {
+      print('카테고리 로드 실패: $e');
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -925,20 +961,65 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       const SizedBox(height: 20),
 
                       // 제목
-                      const Text(
-                        '명언 신청',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '등록하고 싶은 명언을 신청해주세요.',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                      SizedBox(
+                        width: double.infinity,
+                        child: Column(
+                          children: [
+                            Text.rich(
+                              textAlign: TextAlign.center,
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: _name.isNotEmpty ? _name : (_deviceId != null ? generateNickname(_deviceId!) : ''),
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF4CAF50),
+                                    ),
+                                  ),
+                                  const TextSpan(
+                                    text: ' 님,',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              '힐링 하이를 많은 분들과 함께해 주셔서 감사해요!',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              '여러분 만의 따뜻한 말,\n위로가 되는 한 마디가 있으신가요?',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '아래에 내용을 적어주시면\n조만간 힐링 하이에서 직접 만나보실 수 있어요.\n여러분의 마음을 기다릴게요.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[500],
+                                height: 1.6,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -981,7 +1062,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                       // 저자 입력
                       const Text(
-                        '저자 (선택)',
+                        '저자 *',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -1017,9 +1098,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // 카테고리 입력
+                      // 카테고리 선택
                       const Text(
-                        '카테고리 (선택)',
+                        '카테고리 *',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -1027,29 +1108,32 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      TextField(
-                        controller: categoryController,
-                        maxLength: 30,
-                        decoration: InputDecoration(
-                          hintText: '예: 인생, 사랑, 성공, 우정',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.grey[300]!),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.grey[300]!),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFF4CAF50)),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: selectedCategory,
+                            isExpanded: true,
+                            hint: Text(
+                              categories.isEmpty ? '카테고리 로딩 중...' : '카테고리를 선택해주세요',
+                              style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                            ),
+                            items: categories.map((tag) {
+                              return DropdownMenuItem<String>(
+                                value: tag,
+                                child: Text(tag, style: const TextStyle(fontSize: 14)),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setModalState(() {
+                                selectedCategory = value;
+                              });
+                            },
                           ),
                         ),
                       ),
@@ -1060,7 +1144,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: () {
+                          onPressed: () async {
                             if (quoteController.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
@@ -1070,9 +1154,44 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               );
                               return;
                             }
-                            setModalState(() {
-                              isSubmitted = true;
-                            });
+                            if (authorController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('저자를 입력해주세요'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            if (selectedCategory == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('카테고리를 선택해주세요'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+                            try {
+                              await supabase.from('request_quotes').insert({
+                                'text_kr': quoteController.text.trim(),
+                                'resoner_kr': authorController.text.trim(),
+                                'tag_kr': selectedCategory,
+                                'device_id': _deviceId,
+                              });
+                              setModalState(() {
+                                isSubmitted = true;
+                              });
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('신청 실패: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF4CAF50),
