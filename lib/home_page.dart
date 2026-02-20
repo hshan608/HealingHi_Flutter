@@ -4,9 +4,11 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:like_button/like_button.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
+import 'ad_helper.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -28,12 +30,61 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _savedQuoteIds = {};
   Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
 
+  // 전면 광고
+  InterstitialAd? _interstitialAd;
+  final Set<int> _shownInterstitialAtIndex = {}; // 이미 광고를 보인 quote 인덱스
+
   @override
   void initState() {
     super.initState();
     _loadResonerImages();
     _loadQuotes();
     _initUserIdentity();
+    _loadInterstitialAd();
+  }
+
+  @override
+  void dispose() {
+    _interstitialAd?.dispose();
+    super.dispose();
+  }
+
+  // 전면 광고 로드
+  void _loadInterstitialAd() {
+    InterstitialAd.load(
+      adUnitId: AdHelper.interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _interstitialAd = null;
+              _loadInterstitialAd(); // 다음 광고 미리 로드
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              _interstitialAd = null;
+              _loadInterstitialAd();
+            },
+          );
+          if (mounted) {
+            setState(() => _interstitialAd = ad);
+          }
+        },
+        onAdFailedToLoad: (error) {
+          _interstitialAd = null;
+        },
+      ),
+    );
+  }
+
+  // 전면 광고 표시 (quoteIndex 기준 중복 방지)
+  void _showInterstitialAd(int quoteIndex) {
+    if (_shownInterstitialAtIndex.contains(quoteIndex)) return;
+    if (_interstitialAd == null) return;
+    _shownInterstitialAtIndex.add(quoteIndex);
+    _interstitialAd!.show();
   }
 
   // assets/resoner/ 폴더의 이미지 목록 로드
@@ -319,20 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                     : RefreshIndicator(
                         onRefresh: _loadQuotes,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 20.0),
-                          itemCount: _quotes.length,
-                          itemBuilder: (context, index) {
-                            final quote = _quotes[index];
-                            final quoteId = _extractQuoteId(quote);
-                            return _buildContentBox(
-                              '${quote['resoner_kr']}',
-                              quote['text_kr'],
-                              quoteId,
-                              quote['tag_kr']?.toString(),
-                            );
-                          },
-                        ),
+                        child: _buildQuoteListWithAds(),
                       ),
               ),
             ],
@@ -478,6 +516,47 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     );
   }
+
+  // 5개 카드마다 배너 광고, 10번째 명언마다 전면 광고를 삽입한 리스트
+  Widget _buildQuoteListWithAds() {
+    const int bannerFrequency = 5;  // 명언 5개당 배너 광고 1회
+    const int interstitialFrequency = 10; // 명언 10개마다 전면 광고 1회
+    final int adCount = _quotes.length ~/ bannerFrequency;
+    final int totalItems = _quotes.length + adCount;
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 20.0),
+      itemCount: totalItems,
+      itemBuilder: (context, listIndex) {
+        // 배너 광고 슬롯 여부
+        final bool isBannerAd = (listIndex + 1) % (bannerFrequency + 1) == 0;
+        if (isBannerAd) {
+          return const _BannerAdWidget();
+        }
+
+        final int quoteIndex = listIndex - (listIndex ~/ (bannerFrequency + 1));
+        if (quoteIndex >= _quotes.length) return const SizedBox.shrink();
+
+        // 10번째 명언마다 전면 광고 트리거 (9, 19, 29 ... 번째 인덱스)
+        if (quoteIndex > 0 &&
+            (quoteIndex + 1) % interstitialFrequency == 0 &&
+            !_shownInterstitialAtIndex.contains(quoteIndex)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showInterstitialAd(quoteIndex);
+          });
+        }
+
+        final quote = _quotes[quoteIndex];
+        final quoteId = _extractQuoteId(quote);
+        return _buildContentBox(
+          '${quote['resoner_kr']}',
+          quote['text_kr'],
+          quoteId,
+          quote['tag_kr']?.toString(),
+        );
+      },
+    );
+  }
 }
 
 
@@ -530,6 +609,60 @@ class _AnimatedCardItemState extends State<_AnimatedCardItem>
         opacity: _fadeAnimation,
         child: widget.child,
       ),
+    );
+  }
+}
+
+// 배너 광고 위젯
+class _BannerAdWidget extends StatefulWidget {
+  const _BannerAdWidget();
+
+  @override
+  State<_BannerAdWidget> createState() => _BannerAdWidgetState();
+}
+
+class _BannerAdWidgetState extends State<_BannerAdWidget> {
+  BannerAd? _bannerAd;
+  bool _isLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BannerAd(
+      adUnitId: AdHelper.bannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          if (mounted) {
+            setState(() {
+              _bannerAd = ad as BannerAd;
+              _isLoaded = true;
+            });
+          }
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+        },
+      ),
+    ).load();
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isLoaded || _bannerAd == null) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16.0),
+      alignment: Alignment.center,
+      width: _bannerAd!.size.width.toDouble(),
+      height: _bannerAd!.size.height.toDouble(),
+      child: AdWidget(ad: _bannerAd!),
     );
   }
 }

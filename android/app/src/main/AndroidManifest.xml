@@ -38,6 +38,12 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- AdMob App ID: 테스트 ID → 실제 출시 전 AdMob 콘솔의 App ID로 교체 필요
+             실제 ID 형식: ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-7521798484796470~7902788437"/>
+
         <!-- 홈 스크린 위젯 Receiver -->
         <receiver
             android:name=".QuoteWidgetProvider"
