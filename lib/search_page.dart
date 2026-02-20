@@ -702,6 +702,7 @@ class _SearchScreenState extends State<SearchScreen> {
             '${quote['resoner_kr']}',
             quote['text_kr'],
             quoteId,
+            quote['tag_kr']?.toString(),
           );
         },
       ),
@@ -1151,39 +1152,128 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildContentBox(String title, String content, String? quoteId) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8.0),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: Colors.black87,
-            ),
+  Widget _buildContentBox(String title, String content, String? quoteId, String? tag) {
+    return StatefulBuilder(
+      builder: (context, setCardState) {
+        final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
+        final imagePath = _getAuthorImagePath(title);
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 1,
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            content,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w300,
-              color: Colors.grey[600],
-              height: 1.4,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 상단: 프로필 이미지 + 저자명
+              Row(
+                children: [
+                  ClipOval(
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      color: Colors.grey[200],
+                      child: imagePath != null
+                          ? Image.asset(
+                              imagePath,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.person, size: 20, color: Colors.grey[400]);
+                              },
+                            )
+                          : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // 명언 텍스트
+              Text(
+                content,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w300,
+                  color: Colors.grey[800],
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // 하단: 태그 + 좋아요/공유 버튼
+              Row(
+                children: [
+                  if (tag != null && tag.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '# $tag',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  LikeButton(
+                    size: 32,
+                    isLiked: isSaved,
+                    circleColor: const CircleColor(
+                      start: Color(0xFFFF5252),
+                      end: Color(0xFFFF1744),
+                    ),
+                    bubblesColor: const BubblesColor(
+                      dotPrimaryColor: Color(0xFFFF5252),
+                      dotSecondaryColor: Color(0xFFFF8A80),
+                    ),
+                    likeBuilder: (bool isLiked) {
+                      return Image.asset(
+                        isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
+                        width: 32,
+                        height: 32,
+                      );
+                    },
+                    onTap: (bool isLiked) async {
+                      await _toggleUserQuote(quoteId);
+                      setCardState(() {});
+                      if (mounted) setState(() {});
+                      return !isLiked;
+                    },
+                  ),
+                  IconButton(
+                    onPressed: () => _shareContent(title, content),
+                    icon: Icon(Icons.share, color: Colors.grey[600]),
+                    iconSize: 24,
+                    tooltip: '공유하기',
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

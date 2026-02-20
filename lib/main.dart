@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:convert';
 import 'home_page.dart';
 import 'search_page.dart';
@@ -95,6 +96,11 @@ void main() async {
       anonKey: supabaseKey,
     );
     print('✅ Supabase 초기화 완료');
+
+    // AdMob 초기화
+    print('✅ AdMob 초기화 시작...');
+    await MobileAds.instance.initialize();
+    print('✅ AdMob 초기화 완료');
 
     // 위젯 데이터 초기화
     print('✅ 위젯 데이터 초기화 시작...');
