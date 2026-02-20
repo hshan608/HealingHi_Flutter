@@ -531,7 +531,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 _buildAchievementSection(),
 
                 // 명언 신청 버튼 (공유 10회 초과 시 표시)
-                if (_shareCount > 10) ...[
+                if (_shareCount > 1) ...[
                   const SizedBox(height: 30),
                   _buildQuoteRequestButton(),
                 ],
