@@ -6,6 +6,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:convert';
 import 'home_page.dart';
+import 'ad_helper.dart';
 import 'search_page.dart';
 import 'like_page.dart';
 import 'setting_page.dart';
@@ -142,6 +143,8 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  int _navSwitchCount = 0;   // 탭 전환 횟수
+  InterstitialAd? _interstitialAd;
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -149,6 +152,54 @@ class _MainScreenState extends State<MainScreen> {
     const BookmarkScreen(),
     const MyPageScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInterstitialAd();
+  }
+
+  @override
+  void dispose() {
+    _interstitialAd?.dispose();
+    super.dispose();
+  }
+
+  void _loadInterstitialAd() {
+    InterstitialAd.load(
+      adUnitId: AdHelper.interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _interstitialAd = null;
+              _loadInterstitialAd(); // 다음 광고 미리 로드
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              _interstitialAd = null;
+              _loadInterstitialAd();
+            },
+          );
+          if (mounted) setState(() => _interstitialAd = ad);
+        },
+        onAdFailedToLoad: (_) => _interstitialAd = null,
+      ),
+    );
+  }
+
+  void _onNavTap(int index) {
+    if (index == _currentIndex) return; // 같은 탭 재탭은 카운트 제외
+    _navSwitchCount++;
+    setState(() => _currentIndex = index);
+
+    if (_navSwitchCount % 5 == 0 && _interstitialAd != null) {
+      _interstitialAd!.show();
+      _interstitialAd = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -160,11 +211,7 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: _onNavTap,
         selectedItemColor: Colors.transparent, // 개별 색상 사용
         unselectedItemColor: Colors.transparent, // 개별 색상 사용
         iconSize: 24,
