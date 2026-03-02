@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:like_button/like_button.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'ad_helper.dart';
 
 // Supabase 클라이언트 전역 변수
@@ -29,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
   Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
+  Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
 
   // 전면 광고
   InterstitialAd? _interstitialAd;
@@ -131,6 +135,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final list = List<Map<String, dynamic>>.from(response);
       list.shuffle(Random());
+
+      // req_ 접두어 명언의 이미지 일괄 조회
+      final reqIds = list
+          .map((q) => q['id']?.toString())
+          .where((id) => id != null && id!.startsWith('req_'))
+          .cast<String>()
+          .toList();
+      if (reqIds.isNotEmpty) {
+        final numericIds = reqIds
+            .map((id) => int.tryParse(id.replaceFirst('req_', '')))
+            .whereType<int>()
+            .toList();
+        if (numericIds.isNotEmpty) {
+          final images = await supabase
+              .from('request_quote_images')
+              .select('request_quote_idx, image_url')
+              .inFilter('request_quote_idx', numericIds);
+          final Map<String, String> reqImgMap = {};
+          for (final img in images as List) {
+            final idx = img['request_quote_idx']?.toString();
+            final url = img['image_url']?.toString();
+            if (idx != null && url != null) {
+              reqImgMap['req_$idx'] = url;
+            }
+          }
+          _requestQuoteImages = reqImgMap;
+        }
+      }
 
       setState(() {
         _quotes = list;
@@ -324,24 +356,187 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 공유하기 함수
-  void _shareContent(String title, String content) async {
+  // 공유 카드 위젯 (이미지로 캡처용 - 깔끔한 디자인)
+  Widget _buildShareCardContent(String author, String content, String? tag) {
+    return Container(
+      width: 375,
+      color: const Color(0xFFDDE7DE),
+      padding: const EdgeInsets.all(24),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 따옴표 장식
+            const Text(
+              '"',
+              style: TextStyle(
+                fontSize: 56,
+                color: Color(0xFF9DC3A0),
+                height: 0.8,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+            const SizedBox(height: 16),
+            // 명언 텍스트
+            Text(
+              content,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w300,
+                color: Color(0xFF333333),
+                height: 1.7,
+                fontFamily: 'Pretendard',
+              ),
+            ),
+            const SizedBox(height: 24),
+            // 저자
+            Text(
+              '— $author',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Colors.grey[600],
+                fontFamily: 'Pretendard',
+              ),
+            ),
+            if (tag != null && tag.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDDE7DE),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '# $tag',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF5D8A62),
+                    fontFamily: 'Pretendard',
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            const Divider(color: Color(0xFFEEEEEE), thickness: 1),
+            const SizedBox(height: 12),
+            // 앱 브랜딩
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF7AAE80),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Healing Hi',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF7AAE80),
+                      letterSpacing: 0.5,
+                      fontFamily: 'Pretendard',
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF7AAE80),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 명언 카드를 이미지로 캡처해서 공유
+  Future<void> _captureAndShareQuoteImage({
+    required String author,
+    required String content,
+    required String? tag,
+    required String? quoteId,
+  }) async {
+    final key = GlobalKey();
+    late OverlayEntry entry;
+
+    entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -10000,
+        top: 0,
+        child: Material(
+          type: MaterialType.transparency,
+          child: RepaintBoundary(
+            key: key,
+            child: _buildShareCardContent(author, content, tag),
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    Overlay.of(context).insert(entry);
+
     try {
-      await Share.share(
-        '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
-        subject: title,
+      // 위젯이 렌더링될 때까지 대기
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (!mounted) {
+        entry.remove();
+        return;
+      }
+
+      final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) throw Exception('카드 렌더링 실패');
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw Exception('이미지 변환 실패');
+
+      final pngBytes = byteData.buffer.asUint8List();
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/healinghi_quote.png');
+      await file.writeAsBytes(pngBytes);
+
+      entry.remove();
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/png')],
+        subject: '명언 - $author',
       );
       await _incrementShareCount();
     } catch (e) {
-      // 공유 기능이 실패하면 클립보드에 복사
-      await Clipboard.setData(
-        ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
-      );
-      await _incrementShareCount();
+      entry.remove();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('내용이 클립보드에 복사되었습니다!')));
+        // 실패 시 텍스트 클립보드 복사로 폴백
+        await Clipboard.setData(
+          ClipboardData(text: '$author\n\n$content\n\nHealing Hi'),
+        );
+        await _incrementShareCount();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('이미지 생성 실패 - 텍스트가 클립보드에 복사되었습니다.')),
+          );
+        }
       }
     }
   }
@@ -419,15 +614,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 36,
                   height: 36,
                   color: Colors.grey[200],
-                  child: _getResonerImagePath(quoteId) != null
-                      ? Image.asset(
-                          _getResonerImagePath(quoteId)!,
+                  child: quoteId != null && _requestQuoteImages.containsKey(quoteId)
+                      ? Image.network(
+                          _requestQuoteImages[quoteId]!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(Icons.person, size: 20, color: Colors.grey[400]);
-                          },
+                          errorBuilder: (context, error, stackTrace) =>
+                              Icon(Icons.person, size: 20, color: Colors.grey[400]),
                         )
-                      : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                      : _getResonerImagePath(quoteId) != null
+                          ? Image.asset(
+                              _getResonerImagePath(quoteId)!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.person, size: 20, color: Colors.grey[400]);
+                              },
+                            )
+                          : Icon(Icons.person, size: 20, color: Colors.grey[400]),
                 ),
               ),
               const SizedBox(width: 10),
@@ -499,14 +701,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   return !isLiked;
                 },
               ),
-              // 공유 버튼
+              // 공유 버튼 (이미지 카드로 공유)
               IconButton(
                 onPressed: () {
-                  _shareContent(title, content);
+                  _captureAndShareQuoteImage(
+                    author: title,
+                    content: content,
+                    tag: tag,
+                    quoteId: quoteId,
+                  );
                 },
                 icon: Icon(Icons.share, color: Colors.grey[600]),
                 iconSize: 24,
-                tooltip: '공유하기',
+                tooltip: '이미지로 공유하기',
               ),
             ],
           ),

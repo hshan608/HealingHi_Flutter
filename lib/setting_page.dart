@@ -30,6 +30,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   String? _deviceId;
   bool _isLoading = true;
   bool _nicknameSaved = false; // 닉네임 저장 성공 상태
+  int _adminTapCount = 0;
 
   // 공유 등급 계산
   String get _shareLevel {
@@ -219,6 +220,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           AndroidUiSettings(
             toolbarTitle: '프로필 사진',
             toolbarColor: Colors.white,
+            statusBarColor: Colors.white,
             toolbarWidgetColor: Colors.black87,
             activeControlsWidgetColor: const Color(0xFF4CAF50),
             backgroundColor: Colors.black,
@@ -409,19 +411,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
               children: [
                 // 상단 제목
                 GestureDetector(
-                  onLongPress: () {
-                    const allowedIds = {
-                      'BP2A.250605.031.A3',
-                      'BE2A.250530.026.D1',
-                    };
-                    if (_deviceId == null || !allowedIds.contains(_deviceId)) {
-                      return;
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    _adminTapCount++;
+                    if (_adminTapCount >= 5) {
+                      _adminTapCount = 0;
+                      const allowedIds = {
+                        'BP2A.250605.031.A3',
+                        'BE2A.250530.026.D1',
+                      };
+                      if (_deviceId != null && allowedIds.contains(_deviceId)) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AdminPage()),
+                        );
+                      }
                     }
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const AdminPage()),
-                    );
                   },
                   child: const Row(
                     children: [
@@ -853,6 +858,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
     bool isSubmitted = false;
     String? selectedCategory;
     List<String> categories = [];
+    XFile? selectedImage;
+    Uint8List? imagePreviewBytes;
 
     // Supabase에서 카테고리 목록 가져오기
     try {
@@ -1137,6 +1144,100 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 16),
+
+                      // 사진 첨부 (선택)
+                      const Text(
+                        '사진 첨부 (선택)',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () async {
+                          final ImagePicker picker = ImagePicker();
+                          final XFile? image = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            maxWidth: 1080,
+                            maxHeight: 1080,
+                            imageQuality: 80,
+                          );
+                          if (image == null) return;
+                          final bytes = await image.readAsBytes();
+                          setModalState(() {
+                            selectedImage = image;
+                            imagePreviewBytes = bytes;
+                          });
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          height: imagePreviewBytes != null ? null : 120,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: imagePreviewBytes != null
+                              ? Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Image.memory(
+                                        imagePreviewBytes!,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          setModalState(() {
+                                            selectedImage = null;
+                                            imagePreviewBytes = null;
+                                          });
+                                        },
+                                        child: Container(
+                                          width: 28,
+                                          height: 28,
+                                          decoration: const BoxDecoration(
+                                            color: Colors.black54,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            color: Colors.white,
+                                            size: 16,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      size: 36,
+                                      color: Colors.grey[400],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '사진 선택',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey[500],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
                       const SizedBox(height: 24),
 
                       // 신청 버튼
@@ -1173,12 +1274,51 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               return;
                             }
                             try {
-                              await supabase.from('request_quotes').insert({
-                                'text_kr': quoteController.text.trim(),
-                                'resoner_kr': authorController.text.trim(),
-                                'tag_kr': selectedCategory,
-                                'device_id': _deviceId,
-                              });
+                              final insertResult = await supabase
+                                  .from('request_quotes')
+                                  .insert({
+                                    'text_kr': quoteController.text.trim(),
+                                    'resoner_kr': authorController.text.trim(),
+                                    'tag_kr': selectedCategory,
+                                    'device_id': _deviceId,
+                                  })
+                                  .select('id')
+                                  .single();
+
+                              final requestQuoteId = insertResult['id'];
+
+                              if (selectedImage != null) {
+                                try {
+                                  final bytes = await File(selectedImage!.path).readAsBytes();
+                                  final fileExt = selectedImage!.path.split('.').last;
+                                  final filePath = 'quote_requests/$requestQuoteId.$fileExt';
+
+                                  await supabase.storage
+                                      .from('avatars')
+                                      .uploadBinary(
+                                        filePath,
+                                        bytes,
+                                        fileOptions: FileOptions(
+                                          upsert: true,
+                                          contentType: 'image/$fileExt',
+                                        ),
+                                      );
+
+                                  final imageUrl = supabase.storage
+                                      .from('avatars')
+                                      .getPublicUrl(filePath);
+
+                                  await supabase
+                                      .from('request_quote_images')
+                                      .insert({
+                                    'request_quote_idx': requestQuoteId,
+                                    'image_url': imageUrl,
+                                  });
+                                } catch (imgErr) {
+                                  print('이미지 업로드 실패 (신청은 완료됨): $imgErr');
+                                }
+                              }
+
                               setModalState(() {
                                 isSubmitted = true;
                               });
