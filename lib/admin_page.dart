@@ -20,6 +20,7 @@ class _AdminPageState extends State<AdminPage> {
 
   List<Map<String, dynamic>> _pendingQuotes = [];
   Map<String, String> _applicantNames = {}; // device_id -> user_id
+  Map<String, String?> _quoteImageUrls = {}; // request_quote id -> image_url
   bool _isLoading = false;
 
   static const String _adminPassword = '03220608';
@@ -73,10 +74,29 @@ class _AdminPageState extends State<AdminPage> {
         }
       }
 
+      // request_quote_images 테이블에서 이미지 URL 조회
+      final Map<String, String?> imageMap = {};
+      if (quotes.isNotEmpty) {
+        final quoteIds = quotes.map((q) => q['id']).toList();
+        final images = await supabase
+            .from('request_quote_images')
+            .select('request_quote_idx, image_url')
+            .inFilter('request_quote_idx', quoteIds);
+
+        for (final img in images as List) {
+          final idx = img['request_quote_idx']?.toString();
+          final url = img['image_url']?.toString();
+          if (idx != null && url != null) {
+            imageMap[idx] = url;
+          }
+        }
+      }
+
       if (mounted) {
         setState(() {
           _pendingQuotes = quotes;
           _applicantNames = nameMap;
+          _quoteImageUrls = imageMap;
           _isLoading = false;
         });
       }
@@ -357,6 +377,29 @@ class _AdminPageState extends State<AdminPage> {
             '신청자: ${_applicantNames[quote['device_id']?.toString()] ?? quote['device_id'] ?? '알 수 없음'}',
             style: TextStyle(fontSize: 11, color: Colors.grey[400]),
           ),
+          if (_quoteImageUrls[rowId] != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                _quoteImageUrls[rowId]!,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+                loadingBuilder: (_, child, progress) =>
+                    progress == null
+                        ? child
+                        : const SizedBox(
+                            height: 200,
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+                errorBuilder: (_, __, ___) => Text(
+                  '이미지를 불러올 수 없습니다',
+                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [

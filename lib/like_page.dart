@@ -24,6 +24,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   String? _deviceId;
   int? _userIdx;
   Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
+  Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
 
   @override
   void initState() {
@@ -157,10 +158,40 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
           .select()
           .inFilter('id', quoteIds);
 
+      final quoteList = List<Map<String, dynamic>>.from(quotes);
+
+      // req_ 접두어 명언의 이미지 일괄 조회
+      final reqIds = quoteList
+          .map((q) => q['id']?.toString())
+          .where((id) => id != null && id!.startsWith('req_'))
+          .cast<String>()
+          .toList();
+      if (reqIds.isNotEmpty) {
+        final numericIds = reqIds
+            .map((id) => int.tryParse(id.replaceFirst('req_', '')))
+            .whereType<int>()
+            .toList();
+        if (numericIds.isNotEmpty) {
+          final images = await supabase
+              .from('request_quote_images')
+              .select('request_quote_idx, image_url')
+              .inFilter('request_quote_idx', numericIds);
+          final Map<String, String> reqImgMap = {};
+          for (final img in images as List) {
+            final idx = img['request_quote_idx']?.toString();
+            final url = img['image_url']?.toString();
+            if (idx != null && url != null) {
+              reqImgMap['req_$idx'] = url;
+            }
+          }
+          _requestQuoteImages = reqImgMap;
+        }
+      }
+
       setState(() {
         _savedQuotes
           ..clear()
-          ..addAll(List<Map<String, dynamic>>.from(quotes));
+          ..addAll(quoteList);
         _isLoading = false;
       });
     } catch (e) {
@@ -341,15 +372,22 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                   width: 36,
                   height: 36,
                   color: Colors.grey[200],
-                  child: _getResonerImagePath(quoteId) != null
-                      ? Image.asset(
-                          _getResonerImagePath(quoteId)!,
+                  child: quoteId != null && _requestQuoteImages.containsKey(quoteId)
+                      ? Image.network(
+                          _requestQuoteImages[quoteId]!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(Icons.person, size: 20, color: Colors.grey[400]);
-                          },
+                          errorBuilder: (context, error, stackTrace) =>
+                              Icon(Icons.person, size: 20, color: Colors.grey[400]),
                         )
-                      : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                      : _getResonerImagePath(quoteId) != null
+                          ? Image.asset(
+                              _getResonerImagePath(quoteId)!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(Icons.person, size: 20, color: Colors.grey[400]);
+                              },
+                            )
+                          : Icon(Icons.person, size: 20, color: Colors.grey[400]),
                 ),
               ),
               const SizedBox(width: 10),

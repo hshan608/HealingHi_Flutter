@@ -15,4 +15,13 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <!-- UCrop 이미지 크롭 액티비티 테마: 툴바가 상태바/노치에 가려지지 않도록 설정 -->
+    <style name="UCropTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">#FFFFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="colorPrimaryDark">#FFFFFFFF</item>
+        <item name="android:fitsSystemWindows">true</item>
+    </style>
 </resources>
