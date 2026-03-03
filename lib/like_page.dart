@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:like_button/like_button.dart';
 import 'dart:io';
 import 'dart:convert';
 
@@ -207,43 +206,15 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     }
   }
 
-  Future<void> _removeFromBookmark(String? quoteId) async {
-    if (quoteId == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('명언 ID를 찾을 수 없습니다.')));
-      }
-      return;
-    }
-
+  // Supabase에서 북마크 삭제 (애니메이션과 분리)
+  Future<void> _deleteFromSupabase(String? quoteId) async {
+    if (quoteId == null || _userIdx == null) return;
     try {
-      final userIdx = _userIdx;
-      if (userIdx == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('사용자 정보를 찾을 수 없습니다.')));
-        }
-        return;
-      }
-
       await supabase
           .from('users_quotes')
           .delete()
-          .eq('user_idx', userIdx)
+          .eq('user_idx', _userIdx!)
           .eq('quotes_id', quoteId);
-
-      // 리스트에서 제거
-      setState(() {
-        _savedQuotes.removeWhere((quote) => quote['id']?.toString() == quoteId);
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('보관함에서 삭제되었습니다.')));
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -251,6 +222,17 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
         ).showSnackBar(SnackBar(content: Text('삭제 중 오류가 발생했습니다: $e')));
       }
     }
+  }
+
+  // 애니메이션 완료 후 리스트에서 제거
+  void _removeFromList(String? quoteId) {
+    if (!mounted) return;
+    setState(() {
+      _savedQuotes.removeWhere((quote) => quote['id']?.toString() == quoteId);
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('보관함에서 삭제되었습니다.')));
   }
 
   // 공유 카운트 증가
@@ -328,11 +310,17 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                           itemBuilder: (context, index) {
                             final quote = _savedQuotes[index];
                             final quoteId = quote['id']?.toString();
-                            return _buildBookmarkCard(
-                              '${quote['resoner_kr']}',
-                              quote['text_kr'],
-                              quoteId,
-                              quote['tag_kr']?.toString(),
+                            return _AnimatedBookmarkCard(
+                              key: ValueKey(quoteId),
+                              title: '${quote['resoner_kr']}',
+                              content: quote['text_kr'],
+                              quoteId: quoteId,
+                              tag: quote['tag_kr']?.toString(),
+                              resonerImagePath: _getResonerImagePath(quoteId),
+                              requestImageUrl: _requestQuoteImages[quoteId],
+                              onRemoveFromDB: _deleteFromSupabase,
+                              onRemoveFromList: _removeFromList,
+                              onShare: _shareContent,
                             );
                           },
                         ),
@@ -345,140 +333,229 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     );
   }
 
-  Widget _buildBookmarkCard(String title, String content, String? quoteId, String? tag) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16.0),
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 상단: 프로필 이미지 + 저자명
-          Row(
-            children: [
-              ClipOval(
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.grey[200],
-                  child: quoteId != null && _requestQuoteImages.containsKey(quoteId)
-                      ? Image.network(
-                          _requestQuoteImages[quoteId]!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                        )
-                      : _getResonerImagePath(quoteId) != null
-                          ? Image.asset(
-                              _getResonerImagePath(quoteId)!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(Icons.person, size: 20, color: Colors.grey[400]);
-                              },
-                            )
-                          : Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // 명언 텍스트
-          Text(
-            content,
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w300,
-              color: Colors.grey[800],
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // 하단: 태그 + 좋아요/공유 버튼
-          Row(
-            children: [
-              // 태그
-              if (tag != null && tag.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '# $tag',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              const Spacer(),
-              // 좋아요(삭제) 버튼
-              LikeButton(
-                size: 32,
-                isLiked: true,
-                circleColor: const CircleColor(
-                  start: Color(0xFFFF5252),
-                  end: Color(0xFFFF1744),
-                ),
-                bubblesColor: const BubblesColor(
-                  dotPrimaryColor: Color(0xFFFF5252),
-                  dotSecondaryColor: Color(0xFFFF8A80),
-                ),
-                likeBuilder: (bool isLiked) {
-                  return Image.asset(
-                    isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
-                    width: 32,
-                    height: 32,
-                  );
-                },
-                onTap: (bool isLiked) async {
-                  await _removeFromBookmark(quoteId);
-                  return false;
-                },
-              ),
-              // 공유 버튼
-              IconButton(
-                onPressed: () {
-                  _shareContent(title, content);
-                },
-                icon: Icon(Icons.share, color: Colors.grey[600]),
-                iconSize: 24,
-                tooltip: '공유하기',
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   int? _toInt(dynamic value) {
     if (value == null) return null;
     if (value is int) return value;
     if (value is String) return int.tryParse(value);
     return null;
+  }
+}
+
+// 애니메이션이 있는 북마크 카드 위젯
+class _AnimatedBookmarkCard extends StatefulWidget {
+  final String title;
+  final String content;
+  final String? quoteId;
+  final String? tag;
+  final String? resonerImagePath;
+  final String? requestImageUrl;
+  final Future<void> Function(String?) onRemoveFromDB;
+  final void Function(String?) onRemoveFromList;
+  final void Function(String, String) onShare;
+
+  const _AnimatedBookmarkCard({
+    super.key,
+    required this.title,
+    required this.content,
+    this.quoteId,
+    this.tag,
+    this.resonerImagePath,
+    this.requestImageUrl,
+    required this.onRemoveFromDB,
+    required this.onRemoveFromList,
+    required this.onShare,
+  });
+
+  @override
+  State<_AnimatedBookmarkCard> createState() => _AnimatedBookmarkCardState();
+}
+
+class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
+    with TickerProviderStateMixin {
+  late final AnimationController _heartController;
+  late final AnimationController _slideController;
+  late final Animation<double> _heartScale;
+  late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _fadeAnimation;
+  bool _isRemoving = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 하트 애니메이션: 살짝 커졌다가 0으로 줄어듦
+    _heartController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _heartScale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.35), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 1.35, end: 0.0), weight: 80),
+    ]).animate(CurvedAnimation(parent: _heartController, curve: Curves.easeIn));
+
+    // 카드 슬라이드 + 페이드 애니메이션
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(1.5, 0),
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeIn));
+    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeIn),
+    );
+  }
+
+  @override
+  void dispose() {
+    _heartController.dispose();
+    _slideController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleUnlike() async {
+    if (_isRemoving) return;
+    _isRemoving = true;
+
+    // Supabase 삭제를 백그라운드에서 시작 (애니메이션과 병렬)
+    widget.onRemoveFromDB(widget.quoteId);
+
+    // 하트 축소 애니메이션
+    await _heartController.forward();
+
+    // 카드 오른쪽 슬라이드 애니메이션
+    await _slideController.forward();
+
+    // 리스트에서 제거
+    widget.onRemoveFromList(widget.quoteId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 1,
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 상단: 프로필 이미지 + 저자명
+              Row(
+                children: [
+                  ClipOval(
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      color: Colors.grey[200],
+                      child: widget.requestImageUrl != null
+                          ? Image.network(
+                              widget.requestImageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                            )
+                          : widget.resonerImagePath != null
+                              ? Image.asset(
+                                  widget.resonerImagePath!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                                )
+                              : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // 명언 텍스트
+              Text(
+                widget.content,
+                textAlign: TextAlign.left,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w300,
+                  color: Colors.grey[800],
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // 하단: 태그 + 좋아요/공유 버튼
+              Row(
+                children: [
+                  // 태그
+                  if (widget.tag != null && widget.tag!.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '# ${widget.tag}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  // 하트 버튼 (커스텀 애니메이션)
+                  GestureDetector(
+                    onTap: _isRemoving ? null : _handleUnlike,
+                    child: AnimatedBuilder(
+                      animation: _heartScale,
+                      builder: (context, child) {
+                        return Transform.scale(
+                          scale: _heartScale.value,
+                          child: child,
+                        );
+                      },
+                      child: Image.asset(
+                        'assets/heart2.png',
+                        width: 32,
+                        height: 32,
+                      ),
+                    ),
+                  ),
+                  // 공유 버튼
+                  IconButton(
+                    onPressed: () => widget.onShare(widget.title, widget.content),
+                    icon: Icon(Icons.share, color: Colors.grey[600]),
+                    iconSize: 24,
+                    tooltip: '공유하기',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
