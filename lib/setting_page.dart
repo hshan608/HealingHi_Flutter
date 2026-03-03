@@ -31,6 +31,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   bool _isLoading = true;
   bool _nicknameSaved = false; // 닉네임 저장 성공 상태
   int _adminTapCount = 0;
+  bool _showAchievementTooltip = false;
 
   // 공유 등급 계산
   String get _shareLevel {
@@ -288,6 +289,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
         'language': _selectedLanguage,
       }, onConflict: 'device_id').select();
 
+      // 기존 캐시 제거 후 새 이미지 반영
+      if (_profileImageUrl.isNotEmpty) {
+        await NetworkImage(_profileImageUrl).evict();
+      }
+
       setState(() {
         _profileImageUrl = imageUrl;
       });
@@ -538,8 +544,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 const SizedBox(height: 20),
 
                 // 언어 선택 필드
-                _buildLanguageSelector(),
-                const SizedBox(height: 30),
+                // _buildLanguageSelector(),
+                // const SizedBox(height: 30),
 
                 // 공유 등급/개 섹션
                 _buildInfoSection(
@@ -784,16 +790,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 fontWeight: FontWeight.w500,
                 color: Colors.black87,
               ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              width: 16,
-              height: 16,
-              decoration: const BoxDecoration(
-                color: Colors.grey,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.help, color: Colors.white, size: 12),
             ),
           ],
         ),
@@ -1161,14 +1157,44 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           final ImagePicker picker = ImagePicker();
                           final XFile? image = await picker.pickImage(
                             source: ImageSource.gallery,
-                            maxWidth: 1080,
-                            maxHeight: 1080,
-                            imageQuality: 80,
                           );
                           if (image == null) return;
-                          final bytes = await image.readAsBytes();
+
+                          final croppedFile = await ImageCropper().cropImage(
+                            sourcePath: image.path,
+                            aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+                            maxWidth: 1080,
+                            maxHeight: 1080,
+                            compressQuality: 80,
+                            uiSettings: [
+                              AndroidUiSettings(
+                                toolbarTitle: '사진 영역 설정',
+                                toolbarColor: Colors.white,
+                                statusBarColor: Colors.white,
+                                toolbarWidgetColor: Colors.black87,
+                                activeControlsWidgetColor: const Color(0xFF4CAF50),
+                                backgroundColor: Colors.black,
+                                cropStyle: CropStyle.circle,
+                                initAspectRatio: CropAspectRatioPreset.square,
+                                lockAspectRatio: true,
+                                hideBottomControls: true,
+                                showCropGrid: false,
+                              ),
+                              IOSUiSettings(
+                                title: '사진 영역 설정',
+                                aspectRatioLockEnabled: true,
+                                resetAspectRatioEnabled: false,
+                                rotateButtonsHidden: true,
+                                rotateClockwiseButtonHidden: true,
+                                aspectRatioPickerButtonHidden: true,
+                              ),
+                            ],
+                          );
+
+                          if (croppedFile == null) return;
+                          final bytes = await File(croppedFile.path).readAsBytes();
                           setModalState(() {
-                            selectedImage = image;
+                            selectedImage = XFile(croppedFile.path);
                             imagePreviewBytes = bytes;
                           });
                         },
@@ -1366,9 +1392,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           children: [
-            Text(
+            const Text(
               '공유 달성도',
               style: TextStyle(
                 fontSize: 16,
@@ -1376,10 +1402,35 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 color: Colors.black87,
               ),
             ),
-            SizedBox(width: 8),
-            Icon(Icons.help_outline, color: Colors.grey, size: 16),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showAchievementTooltip = !_showAchievementTooltip;
+                });
+              },
+              child: const Icon(Icons.help_outline, color: Colors.grey, size: 16),
+            ),
           ],
         ),
+        if (_showAchievementTooltip) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF5A5A5A),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              '공유 달성도의 게이지가 채워지면\n추가하고 싶은 문구를 \n제작자에게 보낼 수 있어요. \n여러분의 말, 또는 원하는 저자의 명언을\n자유롭게 추가해보세요.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                height: 1.6,
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
