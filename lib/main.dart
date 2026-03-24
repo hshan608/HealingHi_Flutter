@@ -72,10 +72,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    // .env 파일 로드
-    print('✅ .env 파일 로드 시작...');
-    await dotenv.load(fileName: '.env');
-    print('✅ .env 파일 로드 완료');
+    // 환경에 따른 .env 파일 로드
+    // 개발: flutter run --dart-define=FLUTTER_ENV=development (기본값)
+    // 배포: flutter build apk --dart-define=FLUTTER_ENV=production
+    const environment = String.fromEnvironment('FLUTTER_ENV', defaultValue: 'development');
+    print('✅ .env.$environment 파일 로드 시작...');
+    await dotenv.load(fileName: '.env.$environment');
+    print('✅ .env.$environment 파일 로드 완료');
 
     final supabaseUrl = dotenv.env['SUPABASE_URL'];
     final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'];
@@ -84,10 +87,10 @@ void main() async {
     print('✅ Supabase Key 존재 여부: ${supabaseKey != null && supabaseKey.isNotEmpty}');
 
     if (supabaseUrl == null || supabaseUrl.isEmpty) {
-      throw Exception('❌ SUPABASE_URL이 .env 파일에 없습니다');
+      throw Exception('❌ SUPABASE_URL이 .env.$environment 파일에 없습니다');
     }
     if (supabaseKey == null || supabaseKey.isEmpty) {
-      throw Exception('❌ SUPABASE_ANON_KEY가 .env 파일에 없습니다');
+      throw Exception('❌ SUPABASE_ANON_KEY가 .env.$environment 파일에 없습니다');
     }
 
     // Supabase 초기화
