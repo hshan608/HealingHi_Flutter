@@ -8,10 +8,10 @@ import 'package:like_button/like_button.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' as ui;
 import 'ad_helper.dart';
+import 'resoner_image_helper.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -31,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int? _userIdx;
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
-  Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
 
   // 전면 광고
@@ -41,7 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadResonerImages();
+    ResonerImageHelper.load();
     _loadQuotes();
     _initUserIdentity();
     _loadInterstitialAd();
@@ -91,45 +90,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _interstitialAd!.show();
   }
 
-  // assets/resoner/ 폴더의 이미지 목록 로드
-  Future<void> _loadResonerImages() async {
-    try {
-      final manifestContent = await rootBundle.loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-
-      final resonerFiles = manifestMap.keys
-          .where((path) => path.startsWith('assets/resoner/'))
-          .toList();
-
-      final Map<String, String> imageMap = {};
-      for (final path in resonerFiles) {
-        // 파일명에서 id 추출 (예: assets/resoner/1_name.png -> 1)
-        final fileName = path.split('/').last;
-        final idMatch = RegExp(r'^(\d+)_').firstMatch(fileName);
-        if (idMatch != null) {
-          final id = idMatch.group(1)!;
-          imageMap[id] = path;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _resonerImages = imageMap;
-        });
-      }
-    } catch (e) {
-      print('Resoner 이미지 로드 실패: $e');
-    }
-  }
-
-  // quoteId로 이미지 경로 가져오기
-  String? _getResonerImagePath(String? quoteId) {
-    if (quoteId == null) return null;
-    return _resonerImages[quoteId];
-  }
-
   // Supabase에서 명언 데이터 가져오기 (랜덤 순서)
   Future<void> _loadQuotes() async {
+    await ResonerImageHelper.load();
     try {
       final response = await supabase.from('quotes').select();
 
@@ -575,7 +538,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildContentBox(String title, String content, String? quoteId, String? tag) {
+  Widget _buildContentBox(String title, String content, String? quoteId, String? tag, String? imageFile, String? resonerEng) {
+    final resolvedImagePath = quoteId != null && _requestQuoteImages.containsKey(quoteId)
+        ? null
+        : ResonerImageHelper.resolve(imageFile, resonerEng);
     return _AnimatedCardItem(
       child: GestureDetector(
       onDoubleTap: () async {
@@ -621,13 +587,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           errorBuilder: (context, error, stackTrace) =>
                               Icon(Icons.person, size: 20, color: Colors.grey[400]),
                         )
-                      : _getResonerImagePath(quoteId) != null
+                      : resolvedImagePath != null
                           ? Image.asset(
-                              _getResonerImagePath(quoteId)!,
+                              resolvedImagePath,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(Icons.person, size: 20, color: Colors.grey[400]);
-                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(Icons.person, size: 20, color: Colors.grey[400]),
                             )
                           : Icon(Icons.person, size: 20, color: Colors.grey[400]),
                 ),
@@ -760,6 +725,8 @@ class _HomeScreenState extends State<HomeScreen> {
           quote['text_kr'],
           quoteId,
           quote['tag_kr']?.toString(),
+          quote['imagefile']?.toString(),
+          quote['resoner_eng']?.toString(),
         );
       },
     );

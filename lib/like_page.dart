@@ -4,7 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
-import 'dart:convert';
+import 'resoner_image_helper.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -22,50 +22,13 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   bool _isLoading = true;
   String? _deviceId;
   int? _userIdx;
-  Map<String, String> _resonerImages = {}; // quoteId -> imagePath 매핑
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
 
   @override
   void initState() {
     super.initState();
-    _loadResonerImages();
+    ResonerImageHelper.load();
     _initUserIdentity();
-  }
-
-  // assets/resoner/ 폴더의 이미지 목록 로드
-  Future<void> _loadResonerImages() async {
-    try {
-      final manifestContent = await rootBundle.loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-
-      final resonerFiles = manifestMap.keys
-          .where((path) => path.startsWith('assets/resoner/'))
-          .toList();
-
-      final Map<String, String> imageMap = {};
-      for (final path in resonerFiles) {
-        final fileName = path.split('/').last;
-        final idMatch = RegExp(r'^(\d+)_').firstMatch(fileName);
-        if (idMatch != null) {
-          final id = idMatch.group(1)!;
-          imageMap[id] = path;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _resonerImages = imageMap;
-        });
-      }
-    } catch (e) {
-      print('Resoner 이미지 로드 실패: $e');
-    }
-  }
-
-  // quoteId로 이미지 경로 가져오기
-  String? _getResonerImagePath(String? quoteId) {
-    if (quoteId == null) return null;
-    return _resonerImages[quoteId];
   }
 
   Future<void> _initUserIdentity() async {
@@ -119,6 +82,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   }
 
   Future<void> _loadSavedQuotes() async {
+    await ResonerImageHelper.load();
     final userIdx = _userIdx;
     if (userIdx == null) {
       setState(() {
@@ -316,7 +280,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                               content: quote['text_kr'],
                               quoteId: quoteId,
                               tag: quote['tag_kr']?.toString(),
-                              resonerImagePath: _getResonerImagePath(quoteId),
+                              resonerImagePath: ResonerImageHelper.resolve(quote['imagefile']?.toString(), quote['resoner_eng']?.toString()),
                               requestImageUrl: _requestQuoteImages[quoteId],
                               onRemoveFromDB: _deleteFromSupabase,
                               onRemoveFromList: _removeFromList,

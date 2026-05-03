@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:like_button/like_button.dart';
 import 'dart:io';
-import 'dart:convert';
+import 'resoner_image_helper.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -32,14 +32,14 @@ class _SearchScreenState extends State<SearchScreen> {
   int? _userIdx;
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
-  Map<String, String> _resonerImages = {}; // 영어이름(소문자) -> 이미지경로
-  Map<String, String> _authorEngMap = {}; // resoner_kr -> resoner_eng
+  Map<String, String> _authorImageFileMap = {}; // resoner_kr -> imagefile
+  Map<String, String> _authorEngMap = {};        // resoner_kr -> resoner_eng
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
 
   @override
   void initState() {
     super.initState();
-    _loadResonerImages();
+    ResonerImageHelper.load();
     _loadQuotes();
     _initUserIdentity();
   }
@@ -51,48 +51,16 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  // assets/resoner/ 폴더의 이미지를 영어 이름으로 매핑
-  Future<void> _loadResonerImages() async {
-    try {
-      final manifestContent = await rootBundle.loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-
-      final resonerFiles = manifestMap.keys
-          .where((path) => path.startsWith('assets/resoner/'))
-          .toList();
-
-      final Map<String, String> imageMap = {};
-      for (final path in resonerFiles) {
-        final fileName = path.split('/').last;
-        // 파일명에서 ID 부분 제거하고 영어 이름 추출
-        // 예: "10001_Maya Angelou.png" -> "Maya Angelou"
-        // 예: "10003_10021_Abraham Lincoln.png" -> "Abraham Lincoln"
-        final nameWithExt = fileName.replaceAll(RegExp(r'^(\d+_)+'), '');
-        final name = nameWithExt.replaceAll('.png', '');
-        if (name.isNotEmpty && name != 'None') {
-          imageMap[name.toLowerCase()] = path;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _resonerImages = imageMap;
-        });
-      }
-    } catch (e) {
-      print('Resoner 이미지 로드 실패: $e');
-    }
-  }
-
   // resoner_kr로 저자 이미지 경로 가져오기
   String? _getAuthorImagePath(String authorKr) {
+    final imageFile = _authorImageFileMap[authorKr];
     final engName = _authorEngMap[authorKr];
-    if (engName == null) return null;
-    return _resonerImages[engName.toLowerCase()];
+    return ResonerImageHelper.resolve(imageFile, engName);
   }
 
   // Supabase에서 명언 데이터 가져오기
   Future<void> _loadQuotes() async {
+    await ResonerImageHelper.load();
     try {
       final response = await supabase
           .from('quotes')
@@ -101,13 +69,16 @@ class _SearchScreenState extends State<SearchScreen> {
 
       final quotes = List<Map<String, dynamic>>.from(response);
 
-      // resoner_kr -> resoner_eng 매핑 생성
+      // resoner_kr -> imagefile / resoner_eng 매핑 생성
+      final Map<String, String> imageFileMap = {};
       final Map<String, String> engMap = {};
       for (final quote in quotes) {
         final kr = quote['resoner_kr']?.toString();
+        final imageFile = quote['imagefile']?.toString();
         final eng = quote['resoner_eng']?.toString();
-        if (kr != null && eng != null && eng.isNotEmpty) {
-          engMap[kr] = eng;
+        if (kr != null) {
+          if (imageFile != null && imageFile.isNotEmpty) imageFileMap[kr] = imageFile;
+          if (eng != null && eng.isNotEmpty) engMap[kr] = eng;
         }
       }
 
@@ -142,6 +113,7 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _allQuotes = quotes;
         _filteredQuotes = _allQuotes; // 초기에는 모든 명언 표시
+        _authorImageFileMap = imageFileMap;
         _authorEngMap = engMap;
         _isLoading = false;
       });
@@ -732,6 +704,8 @@ class _SearchScreenState extends State<SearchScreen> {
             quote['text_kr'],
             quoteId,
             quote['tag_kr']?.toString(),
+            quote['imagefile']?.toString(),
+            quote['resoner_eng']?.toString(),
           );
         },
       ),
@@ -1181,11 +1155,11 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildContentBox(String title, String content, String? quoteId, String? tag) {
+  Widget _buildContentBox(String title, String content, String? quoteId, String? tag, String? imageFile, String? resonerEng) {
     return StatefulBuilder(
       builder: (context, setCardState) {
         final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
-        final imagePath = _getAuthorImagePath(title);
+        final imagePath = ResonerImageHelper.resolve(imageFile, resonerEng);
         return Container(
           margin: const EdgeInsets.only(bottom: 16.0),
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
