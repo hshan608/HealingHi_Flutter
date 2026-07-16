@@ -10,6 +10,7 @@ import 'admin_page.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
+const _appMutedGreen = Color(0xFF81A684);
 
 // 마이페이지 화면
 class MyPageScreen extends StatefulWidget {
@@ -31,7 +32,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
   bool _isLoading = true;
   bool _nicknameSaved = false; // 닉네임 저장 성공 상태
   int _adminTapCount = 0;
-  bool _showAchievementTooltip = false;
+
+  String _withCacheBuster(String imageUrl) {
+    final separator = imageUrl.contains('?') ? '&' : '?';
+    return '$imageUrl${separator}v=${DateTime.now().microsecondsSinceEpoch}';
+  }
 
   // 공유 등급 계산
   String get _shareLevel {
@@ -186,7 +191,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('언어가 ${_languageOptions[languageCode]}(으)로 변경되었습니다'),
-            backgroundColor: Colors.green,
+            backgroundColor: _appMutedGreen,
           ),
         );
       }
@@ -223,7 +228,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             toolbarColor: Colors.white,
             statusBarColor: Colors.white,
             toolbarWidgetColor: Colors.black87,
-            activeControlsWidgetColor: const Color(0xFF4CAF50),
+            activeControlsWidgetColor: _appMutedGreen,
             backgroundColor: Colors.black,
             cropStyle: CropStyle.circle,
             initAspectRatio: CropAspectRatioPreset.square,
@@ -280,12 +285,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
       // Public URL 가져오기
       final imageUrl = supabase.storage.from('avatars').getPublicUrl(filePath);
+      final refreshedImageUrl = _withCacheBuster(imageUrl);
 
       // users 테이블 업데이트 (device_id를 기준으로 upsert)
       await supabase.from('users').upsert({
         'device_id': _deviceId,
         'user_id': _nameController.text.trim(),
-        'profile_image_url': imageUrl,
+        'profile_image_url': refreshedImageUrl,
         'language': _selectedLanguage,
       }, onConflict: 'device_id').select();
 
@@ -294,15 +300,17 @@ class _MyPageScreenState extends State<MyPageScreen> {
         await NetworkImage(_profileImageUrl).evict();
       }
 
+      if (!mounted) return;
+
       setState(() {
-        _profileImageUrl = imageUrl;
+        _profileImageUrl = refreshedImageUrl;
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('프로필 사진이 업데이트되었습니다!'),
-            backgroundColor: Colors.green,
+            backgroundColor: _appMutedGreen,
           ),
         );
       }
@@ -321,7 +329,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('닉네임을 입력해주세요')));
+      ).showSnackBar(const SnackBar(content: Text('ID 또는 이름을 입력해주세요')));
       return;
     }
 
@@ -347,7 +355,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('중복된 닉네임입니다.'),
+              content: Text('중복된 ID 또는 이름입니다.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -373,8 +381,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('닉네임이 저장되었습니다.'),
-            backgroundColor: Colors.green,
+            content: Text('ID 또는 이름이 저장되었습니다.'),
+            backgroundColor: _appMutedGreen,
           ),
         );
       }
@@ -475,6 +483,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             child: _profileImageUrl.isNotEmpty
                                 ? Image.network(
                                     _profileImageUrl,
+                                    key: ValueKey(_profileImageUrl),
                                     fit: BoxFit.cover,
                                   )
                                 : Container(
@@ -529,14 +538,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 // 이름 입력 필드 (공유 1회 이상이면 편집 가능)
                 if (_shareCount >= 1)
                   _buildInputField(
-                    label: '닉네임',
+                    label: 'ID 또는 이름',
                     controller: _nameController,
-                    hintText: '닉네임을 입력하세요',
+                    hintText: 'ID 또는 이름을 입력하세요',
                     hasCheckIcon: true,
                   )
                 else
                   _buildReadOnlyNameField(
-                    label: '닉네임',
+                    label: 'ID 또는 이름',
                     value: _deviceId != null
                         ? generateNickname(_deviceId!)
                         : '로딩중...',
@@ -688,7 +697,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: _nicknameSaved ? Colors.green : Colors.grey[400],
+                          color: _nicknameSaved ? _appMutedGreen : Colors.grey[400],
                           shape: BoxShape.circle,
                         ),
                         child: AnimatedSwitcher(
@@ -765,7 +774,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         Padding(
           padding: const EdgeInsets.only(left: 12),
           child: Text(
-            '명언을 1회 이상 공유하면 닉네임을 설정할 수 있어요!',
+            '명언을 1회 이상 공유하면 ID 또는 이름을 설정할 수 있어요!',
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
         ),
@@ -837,7 +846,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           ),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF4CAF50),
+          backgroundColor: _appMutedGreen,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(25),
@@ -894,7 +903,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                   children: [
                     const Icon(
                       Icons.check_circle_outline,
-                      color: Color(0xFF4CAF50),
+                      color: _appMutedGreen,
                       size: 64,
                     ),
                     const SizedBox(height: 16),
@@ -921,7 +930,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(context),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4CAF50),
+                          backgroundColor: _appMutedGreen,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(25),
@@ -961,7 +970,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      // 안내 문구와 입력 폼을 초기 화면보다 약 30% 아래에서 시작한다.
+                      SizedBox(
+                        height: MediaQuery.sizeOf(context).height * 0.3,
+                      ),
 
                       // 제목
                       SizedBox(
@@ -977,11 +989,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                     style: const TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
-                                      color: Color(0xFF4CAF50),
+                                      color: _appMutedGreen,
                                     ),
                                   ),
                                   const TextSpan(
-                                    text: ' 님,',
+                                    text: '님,',
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
@@ -1003,7 +1015,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             ),
                             const SizedBox(height: 20),
                             const Text(
-                              '여러분 만의 따뜻한 말,\n위로가 되는 한 마디가 있으신가요?',
+                              '여러분만의 따뜻한 말,\n누군가에게 위로가 되었던 한마디가 있으신가요?',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 16,
@@ -1014,7 +1026,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              '아래에 내용을 적어주시면\n조만간 힐링 하이에서 직접 만나보실 수 있어요.\n여러분의 마음을 기다릴게요.',
+                              '아래에 내용을 남겨주시면\n힐링 하이에서 소개될 수 있도록 소중히 살펴볼게요.\n\n'
+                              '여러분의 따뜻한 마음을 기다릴게요.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 13,
@@ -1056,7 +1069,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFF4CAF50)),
+                            borderSide: const BorderSide(color: _appMutedGreen),
                           ),
                           contentPadding: const EdgeInsets.all(16),
                         ),
@@ -1091,7 +1104,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: Color(0xFF4CAF50)),
+                            borderSide: const BorderSide(color: _appMutedGreen),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -1172,7 +1185,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                 toolbarColor: Colors.white,
                                 statusBarColor: Colors.white,
                                 toolbarWidgetColor: Colors.black87,
-                                activeControlsWidgetColor: const Color(0xFF4CAF50),
+                                activeControlsWidgetColor: _appMutedGreen,
                                 backgroundColor: Colors.black,
                                 cropStyle: CropStyle.circle,
                                 initAspectRatio: CropAspectRatioPreset.square,
@@ -1360,7 +1373,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4CAF50),
+                            backgroundColor: _appMutedGreen,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(25),
@@ -1388,6 +1401,26 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
+  Future<void> _showAchievementInfoDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('공유 달성도 안내'),
+        content: const Text(
+          '공유 달성도의 게이지가 채워지면 추가하고 싶은 문구를 제작자에게 보낼 수 있어요.\n\n'
+          '여러분의 말이나 원하는 저자의 명언을 자유롭게 추가해보세요.',
+          style: TextStyle(height: 1.6),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAchievementSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1404,33 +1437,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _showAchievementTooltip = !_showAchievementTooltip;
-                });
-              },
+              onTap: _showAchievementInfoDialog,
               child: const Icon(Icons.help_outline, color: Colors.grey, size: 16),
             ),
           ],
         ),
-        if (_showAchievementTooltip) ...[
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF5A5A5A),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              '공유 달성도의 게이지가 채워지면\n추가하고 싶은 문구를 \n제작자에게 보낼 수 있어요. \n여러분의 말, 또는 원하는 저자의 명언을\n자유롭게 추가해보세요.',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white,
-                height: 1.6,
-              ),
-            ),
-          ),
-        ],
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
@@ -1486,7 +1497,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       flex: _shareProgress,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.green,
+                          color: _appMutedGreen,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),

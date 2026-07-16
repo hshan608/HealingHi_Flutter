@@ -357,17 +357,18 @@ class _SearchScreenState extends State<SearchScreen> {
   // 공유하기 함수
   void _shareContent(String title, String content) async {
     try {
-      await Share.share(
+      final shareResult = await Share.share(
         '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
         subject: title,
       );
-      await _incrementShareCount();
+      if (shareResult.status == ShareResultStatus.success) {
+        await _incrementShareCount();
+      }
     } catch (e) {
       // 공유 기능이 실패하면 클립보드에 복사
       await Clipboard.setData(
         ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
       );
-      await _incrementShareCount();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1155,6 +1156,50 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  Widget _buildHighlightedContent(String content) {
+    final query = _searchController.text;
+    final matches = query.isEmpty
+        ? const <RegExpMatch>[]
+        : RegExp(
+            RegExp.escape(query),
+            caseSensitive: false,
+          ).allMatches(content).toList();
+    final textStyle = TextStyle(
+      fontSize: 17,
+      fontWeight: FontWeight.w300,
+      color: Colors.grey[800],
+      height: 1.6,
+    );
+
+    if (matches.isEmpty) {
+      return Text(content, style: textStyle);
+    }
+
+    final spans = <TextSpan>[];
+    var currentIndex = 0;
+    for (final match in matches) {
+      if (match.start > currentIndex) {
+        spans.add(TextSpan(text: content.substring(currentIndex, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: content.substring(match.start, match.end),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+      currentIndex = match.end;
+    }
+    if (currentIndex < content.length) {
+      spans.add(TextSpan(text: content.substring(currentIndex)));
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+      style: textStyle,
+      semanticsLabel: content,
+    );
+  }
+
   Widget _buildContentBox(String title, String content, String? quoteId, String? tag, String? imageFile, String? resonerEng) {
     return StatefulBuilder(
       builder: (context, setCardState) {
@@ -1217,15 +1262,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               const SizedBox(height: 14),
               // 명언 텍스트
-              Text(
-                content,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w300,
-                  color: Colors.grey[800],
-                  height: 1.6,
-                ),
-              ),
+              _buildHighlightedContent(content),
               const SizedBox(height: 16),
               // 하단: 태그 + 좋아요/공유 버튼
               Row(

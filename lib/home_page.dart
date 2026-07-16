@@ -25,6 +25,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final ScrollController _quoteScrollController = ScrollController();
   List<Map<String, dynamic>> _quotes = [];
   bool _isLoading = true;
   String? _deviceId;
@@ -35,7 +36,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 전면 광고
   InterstitialAd? _interstitialAd;
-  final Set<int> _shownInterstitialAtIndex = {}; // 이미 광고를 보인 quote 인덱스
+  bool _isInterstitialShowing = false;
+  final Set<String> _shownInterstitialKeys = {}; // quote 인덱스와 스크롤 방향별 광고 이력
 
   @override
   void initState() {
@@ -48,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _quoteScrollController.dispose();
     _interstitialAd?.dispose();
     super.dispose();
   }
@@ -62,11 +65,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
               ad.dispose();
+              _isInterstitialShowing = false;
               _interstitialAd = null;
               _loadInterstitialAd(); // 다음 광고 미리 로드
             },
             onAdFailedToShowFullScreenContent: (ad, error) {
               ad.dispose();
+              _isInterstitialShowing = false;
               _interstitialAd = null;
               _loadInterstitialAd();
             },
@@ -82,12 +87,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 전면 광고 표시 (quoteIndex 기준 중복 방지)
-  void _showInterstitialAd(int quoteIndex) {
-    if (_shownInterstitialAtIndex.contains(quoteIndex)) return;
-    if (_interstitialAd == null) return;
-    _shownInterstitialAtIndex.add(quoteIndex);
-    _interstitialAd!.show();
+  String _interstitialKey(int quoteIndex, ScrollDirection direction) {
+    return '$quoteIndex:${direction.name}';
+  }
+
+  // 전면 광고 표시 (quoteIndex와 스크롤 방향 기준 중복 방지)
+  void _showInterstitialAd(int quoteIndex, ScrollDirection direction) {
+    final interstitialKey = _interstitialKey(quoteIndex, direction);
+    if (_shownInterstitialKeys.contains(interstitialKey)) return;
+
+    // 빠른 스크롤로 여러 광고 지점이 한 번에 빌드되더라도 현재 광고만 표시한다.
+    if (_isInterstitialShowing) {
+      _shownInterstitialKeys.add(interstitialKey);
+      return;
+    }
+
+    final ad = _interstitialAd;
+    if (ad == null) return;
+
+    _shownInterstitialKeys.add(interstitialKey);
+    _isInterstitialShowing = true;
+    _interstitialAd = null;
+
+    // 광고가 표시되는 시점에 진행 중인 빠른 관성 스크롤을 즉시 멈춘다.
+    if (_quoteScrollController.hasClients) {
+      _quoteScrollController.jumpTo(_quoteScrollController.offset);
+    }
+
+    ad.show();
   }
 
   // Supabase에서 명언 데이터 가져오기 (랜덤 순서)
@@ -482,19 +509,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
       entry.remove();
 
-      await Share.shareXFiles(
+      final shareResult = await Share.shareXFiles(
         [XFile(file.path, mimeType: 'image/png')],
         subject: '명언 - $author',
       );
-      await _incrementShareCount();
+      if (shareResult.status == ShareResultStatus.success) {
+        await _incrementShareCount();
+      }
     } catch (e) {
-      entry.remove();
+      if (entry.mounted) entry.remove();
       if (mounted) {
         // 실패 시 텍스트 클립보드 복사로 폴백
         await Clipboard.setData(
           ClipboardData(text: '$author\n\n$content\n\nHealing Hi'),
         );
-        await _incrementShareCount();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('이미지 생성 실패 - 텍스트가 클립보드에 복사되었습니다.')),
@@ -697,6 +725,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final int totalItems = _quotes.length + adCount;
 
     return ListView.builder(
+      controller: _quoteScrollController,
       padding: const EdgeInsets.only(top: 20.0),
       itemCount: totalItems,
       itemBuilder: (context, listIndex) {
@@ -710,11 +739,16 @@ class _HomeScreenState extends State<HomeScreen> {
         if (quoteIndex >= _quotes.length) return const SizedBox.shrink();
 
         // 10번째 명언마다 전면 광고 트리거 (9, 19, 29 ... 번째 인덱스)
+        final scrollDirection = _quoteScrollController.hasClients
+            ? _quoteScrollController.position.userScrollDirection
+            : ScrollDirection.idle;
+        final interstitialKey = _interstitialKey(quoteIndex, scrollDirection);
         if (quoteIndex > 0 &&
             (quoteIndex + 1) % interstitialFrequency == 0 &&
-            !_shownInterstitialAtIndex.contains(quoteIndex)) {
+            scrollDirection != ScrollDirection.idle &&
+            !_shownInterstitialKeys.contains(interstitialKey)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showInterstitialAd(quoteIndex);
+            _showInterstitialAd(quoteIndex, scrollDirection);
           });
         }
 

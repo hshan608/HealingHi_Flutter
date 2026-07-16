@@ -214,16 +214,17 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
 
   void _shareContent(String title, String content) async {
     try {
-      await Share.share(
+      final shareResult = await Share.share(
         '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
         subject: title,
       );
-      await _incrementShareCount();
+      if (shareResult.status == ShareResultStatus.success) {
+        await _incrementShareCount();
+      }
     } catch (e) {
       await Clipboard.setData(
         ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
       );
-      await _incrementShareCount();
       if (mounted) {
         ScaffoldMessenger.of(
           context,

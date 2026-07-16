@@ -208,6 +208,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     const activeGreen = Color(0xFF81A684); // 활성화 시 진한 녹색
     const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
+    const bookmarkPink = Color(0xFFFF8787); // 보관함 하트 색상
 
     return Scaffold(
       body: _screens[_currentIndex],
@@ -236,11 +237,11 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(
               Icons.favorite_border,
-              color: _currentIndex == 2 ? Colors.pink : inactiveGrey,
+              color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
             ),
-            activeIcon: Icon(
+            activeIcon: const Icon(
               Icons.favorite,
-              color: Colors.pink,
+              color: bookmarkPink,
             ),
             label: '',
           ),
