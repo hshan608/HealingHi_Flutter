@@ -561,6 +561,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                   title: '공유 등급/개',
                   value: _shareLevel,
                   valueColor: Colors.red,
+                  onSearchTap: _showShareLeaderboard,
                 ),
                 const SizedBox(height: 20),
 
@@ -782,10 +783,231 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _loadShareLeaderboard() async {
+    final responses = await Future.wait([
+      supabase.from('users').select('device_id, user_id'),
+      supabase.from('device_shares').select('device_id, share_count'),
+    ]);
+
+    final userNames = <String, String>{};
+    final shareCounts = <String, int>{};
+    final deviceIds = <String>{};
+
+    for (final row in List<Map<String, dynamic>>.from(responses[0])) {
+      final deviceId = row['device_id']?.toString();
+      if (deviceId == null || deviceId.isEmpty) continue;
+      final userName = row['user_id']?.toString().trim();
+      if (userName != null && userName.isNotEmpty) {
+        userNames[deviceId] = userName;
+      }
+      deviceIds.add(deviceId);
+    }
+
+    for (final row in List<Map<String, dynamic>>.from(responses[1])) {
+      final deviceId = row['device_id']?.toString();
+      if (deviceId == null || deviceId.isEmpty) continue;
+      final shareCount = row['share_count'];
+      shareCounts[deviceId] = shareCount is int
+          ? shareCount
+          : int.tryParse(shareCount?.toString() ?? '') ?? 0;
+      deviceIds.add(deviceId);
+    }
+
+    if (_deviceId != null) deviceIds.add(_deviceId!);
+
+    final entries = deviceIds.map((deviceId) {
+      return <String, dynamic>{
+        'deviceId': deviceId,
+        'name': userNames[deviceId] ?? generateNickname(deviceId),
+        'shareCount': shareCounts[deviceId] ?? 0,
+        'isCurrentUser': deviceId == _deviceId,
+      };
+    }).toList();
+
+    entries.sort((a, b) {
+      final countComparison = (b['shareCount'] as int).compareTo(
+        a['shareCount'] as int,
+      );
+      if (countComparison != 0) return countComparison;
+      return (a['name'] as String).compareTo(b['name'] as String);
+    });
+
+    int? previousCount;
+    var currentRank = 0;
+    for (var index = 0; index < entries.length; index++) {
+      final count = entries[index]['shareCount'] as int;
+      if (previousCount != count) currentRank = index + 1;
+      entries[index]['rank'] = currentRank;
+      previousCount = count;
+    }
+
+    return entries;
+  }
+
+  Future<void> _showShareLeaderboard() async {
+    final leaderboardFuture = _loadShareLeaderboard();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.8,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Row(
+                children: [
+                  Icon(Icons.leaderboard_outlined, color: _appMutedGreen),
+                  SizedBox(width: 8),
+                  Text(
+                    '공유 리더보드',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: leaderboardFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text(
+                          '리더보드를 불러오지 못했습니다.\n잠시 후 다시 시도해주세요.',
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+
+                    final entries = snapshot.data ?? [];
+                    Map<String, dynamic>? currentEntry;
+                    for (final entry in entries) {
+                      if (entry['isCurrentUser'] == true) {
+                        currentEntry = entry;
+                        break;
+                      }
+                    }
+
+                    return Column(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _appMutedGreen.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            children: [
+                              const Text(
+                                '내 순위',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const Spacer(),
+                              Text(
+                                currentEntry == null
+                                    ? '-'
+                                    : '${currentEntry['rank']}위 · ${currentEntry['shareCount']}회',
+                                style: const TextStyle(
+                                  color: _appMutedGreen,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: entries.isEmpty
+                              ? const Center(child: Text('표시할 사용자가 없습니다.'))
+                              : ListView.separated(
+                                  itemCount: entries.length,
+                                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final entry = entries[index];
+                                    final isCurrentUser =
+                                        entry['isCurrentUser'] as bool;
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: isCurrentUser
+                                            ? _appMutedGreen.withValues(alpha: 0.1)
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: ListTile(
+                                        leading: SizedBox(
+                                          width: 34,
+                                          child: Center(
+                                            child: Text(
+                                              '${entry['rank']}',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: index < 3
+                                                    ? _appMutedGreen
+                                                    : Colors.grey[600],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        title: Text(
+                                          '${entry['name']}${isCurrentUser ? ' (나)' : ''}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: isCurrentUser
+                                                ? FontWeight.bold
+                                                : FontWeight.w500,
+                                          ),
+                                        ),
+                                        trailing: Text(
+                                          '${entry['shareCount']}회',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildInfoSection({
     required String title,
     required String value,
     Color? valueColor,
+    VoidCallback? onSearchTap,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -800,6 +1022,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 color: Colors.black87,
               ),
             ),
+            if (onSearchTap != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: onSearchTap,
+                tooltip: '공유 리더보드 보기',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.search, size: 19, color: Colors.grey),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 8),
