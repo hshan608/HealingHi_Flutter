@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 5
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_KEY }}
     steps:
       - name: Validate Supabase secrets
         shell: bash
@@ -26,7 +26,7 @@ jobs:
             exit 1
           fi
           if [[ -z "$SUPABASE_ANON_KEY" ]]; then
-            echo "::error::Repository secret SUPABASE_ANON_KEY is missing."
+            echo "::error::Repository secret SUPABASE_KEY is missing."
             exit 1
           fi
           if [[ "$SUPABASE_URL" != https://*.supabase.co ]]; then
