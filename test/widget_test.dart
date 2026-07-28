@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:healing_hi/resoner_image_helper.dart';
 import 'package:healing_hi/tutorial.dart';
 
 void main() {
@@ -99,5 +100,23 @@ void main() {
 
     expect(targetBorder, findsOneWidget);
     expect(tester.getRect(targetBorder), const Rect.fromLTWH(80, 120, 240, 56));
+  });
+
+  testWidgets('같은 저자의 이미지 별칭은 하나의 대표 이미지로 통일된다', (tester) async {
+    await ResonerImageHelper.load();
+
+    const saintExuperyImage = 'assets/resoner/Saint-Exupéry.png';
+    expect(
+      ResonerImageHelper.resolve('Exupery', 'Antoine de Saint-Exupéry'),
+      saintExuperyImage,
+    );
+    expect(
+      ResonerImageHelper.resolve('Saint-Exupéry', 'Antoine de Saint-Exupéry'),
+      saintExuperyImage,
+    );
+
+    const sunTzuImage = 'assets/resoner/Suntzu.png';
+    expect(ResonerImageHelper.resolve('Suntzu', 'Sun Tzu'), sunTzuImage);
+    expect(ResonerImageHelper.resolve('Tzu', 'Sun Tzu'), sunTzuImage);
   });
 }
