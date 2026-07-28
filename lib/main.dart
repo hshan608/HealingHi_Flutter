@@ -10,6 +10,8 @@ import 'ad_helper.dart';
 import 'search_page.dart';
 import 'like_page.dart';
 import 'setting_page.dart';
+import 'tutorial.dart';
+import 'installation_identity.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -50,15 +52,10 @@ class WidgetDataManager {
       }).toList();
 
       // SharedPreferences에 저장
-      await HomeWidget.saveWidgetData<String>(
-        'quote_data',
-        jsonEncode(quotes),
-      );
+      await HomeWidget.saveWidgetData<String>('quote_data', jsonEncode(quotes));
 
       // 위젯 업데이트 요청
-      await HomeWidget.updateWidget(
-        androidName: 'QuoteWidgetProvider',
-      );
+      await HomeWidget.updateWidget(androidName: 'QuoteWidgetProvider');
 
       print('위젯 데이터 업데이트 완료: ${quotes.length}개 명언');
       print('저장된 데이터 샘플: ${quotes.first}');
@@ -75,7 +72,10 @@ void main() async {
     // 환경에 따른 .env 파일 로드
     // 개발: flutter run --dart-define=FLUTTER_ENV=development (기본값)
     // 배포: flutter build apk --dart-define=FLUTTER_ENV=production
-    const environment = String.fromEnvironment('FLUTTER_ENV', defaultValue: 'development');
+    const environment = String.fromEnvironment(
+      'FLUTTER_ENV',
+      defaultValue: 'development',
+    );
     print('✅ .env.$environment 파일 로드 시작...');
     await dotenv.load(fileName: '.env.$environment');
     print('✅ .env.$environment 파일 로드 완료');
@@ -84,7 +84,9 @@ void main() async {
     final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'];
 
     print('✅ Supabase URL: $supabaseUrl');
-    print('✅ Supabase Key 존재 여부: ${supabaseKey != null && supabaseKey.isNotEmpty}');
+    print(
+      '✅ Supabase Key 존재 여부: ${supabaseKey != null && supabaseKey.isNotEmpty}',
+    );
 
     if (supabaseUrl == null || supabaseUrl.isEmpty) {
       throw Exception('❌ SUPABASE_URL이 .env.$environment 파일에 없습니다');
@@ -93,13 +95,28 @@ void main() async {
       throw Exception('❌ SUPABASE_ANON_KEY가 .env.$environment 파일에 없습니다');
     }
 
+    await InstallationIdentity.initialize();
+
     // Supabase 초기화
     print('✅ Supabase 초기화 시작...');
     await Supabase.initialize(
       url: supabaseUrl,
       anonKey: supabaseKey,
+      headers: {'x-installation-id': InstallationIdentity.id},
     );
     print('✅ Supabase 초기화 완료');
+
+    final legacyDeviceId = InstallationIdentity.legacyId;
+    if (legacyDeviceId != null && legacyDeviceId.isNotEmpty) {
+      try {
+        await Supabase.instance.client.rpc(
+          'claim_legacy_installation',
+          params: {'p_legacy_device_id': legacyDeviceId},
+        );
+      } catch (error) {
+        print('기존 사용자 데이터 이전을 건너뜁니다: $error');
+      }
+    }
 
     // AdMob 초기화
     print('✅ AdMob 초기화 시작...');
@@ -110,7 +127,6 @@ void main() async {
     print('✅ 위젯 데이터 초기화 시작...');
     await WidgetDataManager.initializeWidgetData();
     print('✅ 위젯 데이터 초기화 완료');
-
   } catch (e, stackTrace) {
     print('❌❌❌ 초기화 오류 발생 ❌❌❌');
     print('오류 메시지: $e');
@@ -146,7 +162,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  int _navSwitchCount = 0;   // 탭 전환 횟수
+  int _navSwitchCount = 0; // 탭 전환 횟수
   InterstitialAd? _interstitialAd;
 
   final List<Widget> _screens = [

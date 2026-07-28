@@ -44,6 +44,10 @@ dependencies:
   
   # Device info
   device_info_plus: ^10.1.2
+
+  # Per-installation identity stored in the platform secure store
+  flutter_secure_storage: ^10.3.1
+  uuid: ^4.6.0
   
   # Image picker
   image_picker: ^1.1.2

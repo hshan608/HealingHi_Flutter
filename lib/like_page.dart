@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'dart:io';
+import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
 
 // Supabase 클라이언트 전역 변수
@@ -33,34 +32,8 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
 
   Future<void> _initUserIdentity() async {
     try {
-      final deviceInfo = DeviceInfoPlugin();
-      String? deviceId;
-
-      if (Platform.isAndroid) {
-        final info = await deviceInfo.androidInfo;
-        deviceId = info.id;
-      } else if (Platform.isIOS) {
-        final info = await deviceInfo.iosInfo;
-        deviceId = info.identifierForVendor;
-      } else if (Platform.isWindows) {
-        final info = await deviceInfo.windowsInfo;
-        deviceId = info.deviceId;
-      } else if (Platform.isLinux) {
-        final info = await deviceInfo.linuxInfo;
-        deviceId = info.machineId;
-      } else if (Platform.isMacOS) {
-        final info = await deviceInfo.macOsInfo;
-        deviceId = info.systemGUID;
-      }
-
+      final deviceId = InstallationIdentity.id;
       _deviceId = deviceId;
-
-      if (deviceId == null) {
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
 
       final user = await supabase
           .from('users')
@@ -281,7 +254,10 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                               content: quote['text_kr'],
                               quoteId: quoteId,
                               tag: quote['tag_kr']?.toString(),
-                              resonerImagePath: ResonerImageHelper.resolve(quote['imagefile']?.toString(), quote['resoner_eng']?.toString()),
+                              resonerImagePath: ResonerImageHelper.resolve(
+                                quote['imagefile']?.toString(),
+                                quote['resoner_eng']?.toString(),
+                              ),
                               requestImageUrl: _requestQuoteImages[quoteId],
                               onRemoveFromDB: _deleteFromSupabase,
                               onRemoveFromList: _removeFromList,
@@ -367,9 +343,10 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
       begin: Offset.zero,
       end: const Offset(1.5, 0),
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeIn));
-    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeIn),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeIn));
   }
 
   @override
@@ -433,16 +410,28 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                               widget.requestImageUrl!,
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) =>
-                                  Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                                  Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: Colors.grey[400],
+                                  ),
                             )
                           : widget.resonerImagePath != null
-                              ? Image.asset(
-                                  widget.resonerImagePath!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                                )
-                              : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                          ? Image.asset(
+                              widget.resonerImagePath!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: Colors.grey[400],
+                                  ),
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: 20,
+                              color: Colors.grey[400],
+                            ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -475,7 +464,10 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                   // 태그
                   if (widget.tag != null && widget.tag!.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(20),
@@ -510,7 +502,8 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                   ),
                   // 공유 버튼
                   IconButton(
-                    onPressed: () => widget.onShare(widget.title, widget.content),
+                    onPressed: () =>
+                        widget.onShare(widget.title, widget.content),
                     icon: Icon(Icons.share, color: Colors.grey[600]),
                     iconSize: 24,
                     tooltip: '공유하기',

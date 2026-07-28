@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:like_button/like_button.dart';
-import 'dart:io';
+import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
 
 // Supabase 클라이언트 전역 변수
@@ -33,7 +32,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
   Map<String, String> _authorImageFileMap = {}; // resoner_kr -> imagefile
-  Map<String, String> _authorEngMap = {};        // resoner_kr -> resoner_eng
+  Map<String, String> _authorEngMap = {}; // resoner_kr -> resoner_eng
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
 
   @override
@@ -77,7 +76,8 @@ class _SearchScreenState extends State<SearchScreen> {
         final imageFile = quote['imagefile']?.toString();
         final eng = quote['resoner_eng']?.toString();
         if (kr != null) {
-          if (imageFile != null && imageFile.isNotEmpty) imageFileMap[kr] = imageFile;
+          if (imageFile != null && imageFile.isNotEmpty)
+            imageFileMap[kr] = imageFile;
           if (eng != null && eng.isNotEmpty) engMap[kr] = eng;
         }
       }
@@ -132,29 +132,8 @@ class _SearchScreenState extends State<SearchScreen> {
   // 디바이스 ID와 사용자 idx 로드
   Future<void> _initUserIdentity() async {
     try {
-      final deviceInfo = DeviceInfoPlugin();
-      String? deviceId;
-
-      if (Platform.isAndroid) {
-        final info = await deviceInfo.androidInfo;
-        deviceId = info.id;
-      } else if (Platform.isIOS) {
-        final info = await deviceInfo.iosInfo;
-        deviceId = info.identifierForVendor;
-      } else if (Platform.isWindows) {
-        final info = await deviceInfo.windowsInfo;
-        deviceId = info.deviceId;
-      } else if (Platform.isLinux) {
-        final info = await deviceInfo.linuxInfo;
-        deviceId = info.machineId;
-      } else if (Platform.isMacOS) {
-        final info = await deviceInfo.macOsInfo;
-        deviceId = info.systemGUID;
-      }
-
+      final deviceId = InstallationIdentity.id;
       _deviceId = deviceId;
-
-      if (deviceId == null) return;
 
       final user = await supabase
           .from('users')
@@ -292,10 +271,11 @@ class _SearchScreenState extends State<SearchScreen> {
       if (_searchType == 'author') {
         // 저자 검색: resoner_kr만 검색하고 중복 제거 (group by)
         final matchingAuthors = _allQuotes
-            .where((quote) => quote['resoner_kr']
-                .toString()
-                .toLowerCase()
-                .contains(query.toLowerCase()))
+            .where(
+              (quote) => quote['resoner_kr'].toString().toLowerCase().contains(
+                query.toLowerCase(),
+              ),
+            )
             .map((quote) => quote['resoner_kr'].toString())
             .toSet()
             .toList();
@@ -314,9 +294,11 @@ class _SearchScreenState extends State<SearchScreen> {
       } else {
         // 주제 검색: tag_kr을 검색하고 중복 제거 (group by)
         final matchingSubjects = _allQuotes
-            .where((quote) => (quote['tag_kr']?.toString() ?? '')
-                .toLowerCase()
-                .contains(query.toLowerCase()))
+            .where(
+              (quote) => (quote['tag_kr']?.toString() ?? '')
+                  .toLowerCase()
+                  .contains(query.toLowerCase()),
+            )
             .map((quote) => quote['tag_kr']?.toString() ?? '')
             .where((tag) => tag.isNotEmpty)
             .toSet()
@@ -394,223 +376,225 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                  // 상단 제목
-                  const Row(
-                    children: [
-                      Text(
-                        '검색',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 검색바 섹션
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8.0),
-                    height: 56.0,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12.0),
-                      border: Border.all(
-                        color: Colors.grey.withOpacity(0.2),
-                        width: 1.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          spreadRadius: 1,
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
+                    // 상단 제목
+                    const Row(
+                      children: [
+                        Text(
+                          '검색',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
                         ),
                       ],
                     ),
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      onChanged: _performSearch,
-                      keyboardType: TextInputType.text,
-                      textInputAction: TextInputAction.search,
-                      enableInteractiveSelection: true,
-                      onSubmitted: _performSearch,
-                      onTap: () {
-                        SystemChannels.textInput.invokeMethod('TextInput.show');
-                      },
-                      decoration: InputDecoration(
-                        hintText: '입력',
-                        hintStyle: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: 14,
+                    const SizedBox(height: 12),
+
+                    // 검색바 섹션
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8.0),
+                      height: 56.0,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12.0),
+                        border: Border.all(
+                          color: Colors.grey.withOpacity(0.2),
+                          width: 1.0,
                         ),
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: Colors.grey,
-                          size: 20,
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _performSearch('');
-                                },
-                                icon: const Icon(
-                                  Icons.clear,
-                                  color: Colors.grey,
-                                  size: 20,
-                                ),
-                              )
-                            : null,
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16.0,
-                          vertical: 16.0,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.1),
+                            spreadRadius: 1,
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        onChanged: _performSearch,
+                        keyboardType: TextInputType.text,
+                        textInputAction: TextInputAction.search,
+                        enableInteractiveSelection: true,
+                        onSubmitted: _performSearch,
+                        onTap: () {
+                          SystemChannels.textInput.invokeMethod(
+                            'TextInput.show',
+                          );
+                        },
+                        decoration: InputDecoration(
+                          hintText: '입력',
+                          hintStyle: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 14,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Colors.grey,
+                            size: 20,
+                          ),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _performSearch('');
+                                  },
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    color: Colors.grey,
+                                    size: 20,
+                                  ),
+                                )
+                              : null,
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 16.0,
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  // 검색 타입 선택 탭
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _searchType = 'author';
-                              });
-                              _performSearch(_searchController.text);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12.0,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
+                    // 검색 타입 선택 탭
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _searchType = 'author';
+                                });
+                                _performSearch(_searchController.text);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: _searchType == 'author'
+                                          ? Colors.black87
+                                          : Colors.transparent,
+                                      width: 2.0,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  '저자',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: _searchType == 'author'
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                     color: _searchType == 'author'
                                         ? Colors.black87
-                                        : Colors.transparent,
-                                    width: 2.0,
+                                        : Colors.grey,
                                   ),
-                                ),
-                              ),
-                              child: Text(
-                                '저자',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: _searchType == 'author'
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: _searchType == 'author'
-                                      ? Colors.black87
-                                      : Colors.grey,
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _searchType = 'content';
-                              });
-                              _performSearch(_searchController.text);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12.0,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _searchType = 'content';
+                                });
+                                _performSearch(_searchController.text);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: _searchType == 'content'
+                                          ? Colors.black87
+                                          : Colors.transparent,
+                                      width: 2.0,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  '본문',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: _searchType == 'content'
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                     color: _searchType == 'content'
                                         ? Colors.black87
-                                        : Colors.transparent,
-                                    width: 2.0,
+                                        : Colors.grey,
                                   ),
-                                ),
-                              ),
-                              child: Text(
-                                '본문',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: _searchType == 'content'
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: _searchType == 'content'
-                                      ? Colors.black87
-                                      : Colors.grey,
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _searchType = 'subject';
-                              });
-                              _performSearch(_searchController.text);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12.0,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _searchType = 'subject';
+                                });
+                                _performSearch(_searchController.text);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      color: _searchType == 'subject'
+                                          ? Colors.black87
+                                          : Colors.transparent,
+                                      width: 2.0,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  '주제',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: _searchType == 'subject'
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                     color: _searchType == 'subject'
                                         ? Colors.black87
-                                        : Colors.transparent,
-                                    width: 2.0,
+                                        : Colors.grey,
                                   ),
-                                ),
-                              ),
-                              child: Text(
-                                '주제',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: _searchType == 'subject'
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: _searchType == 'subject'
-                                      ? Colors.black87
-                                      : Colors.grey,
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            // 검색 결과 또는 안내 메시지 (패딩 없음, 전체 너비)
-            Expanded(
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 16.0,
+                  ],
                 ),
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _buildSearchResults(),
               ),
-            ),
+              // 검색 결과 또는 안내 메시지 (패딩 없음, 전체 너비)
+              Expanded(
+                child: Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 16.0,
+                  ),
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _buildSearchResults(),
+                ),
+              ),
             ],
           ),
         ),
@@ -626,11 +610,7 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.manage_search,
-              size: 80,
-              color: Colors.grey[300],
-            ),
+            Icon(Icons.manage_search, size: 80, color: Colors.grey[300]),
             const SizedBox(height: 20),
             const Text(
               '검색하고 싶은 항목을 우선 선택해주세요.',
@@ -645,10 +625,7 @@ class _SearchScreenState extends State<SearchScreen> {
             Text(
               '저자, 본문, 주제, 어느 것을 찾고 싶으세요?',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -719,11 +696,7 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset(
-            'assets/sorry.png',
-            width: 160,
-            height: 160,
-          ),
+          Image.asset('assets/sorry.png', width: 160, height: 160),
           const SizedBox(height: 20),
           const Text(
             '아직 추가되지 않은 내용이에요.',
@@ -736,10 +709,7 @@ class _SearchScreenState extends State<SearchScreen> {
           const SizedBox(height: 8),
           const Text(
             '공유 달성도를 충족하시면\n자유롭게 추가 요청을 하실 수 있어요!',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
         ],
@@ -782,7 +752,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   // 저자 헤더
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
                         ClipOval(
@@ -795,10 +768,18 @@ class _SearchScreenState extends State<SearchScreen> {
                                     _getAuthorImagePath(author)!,
                                     fit: BoxFit.cover,
                                     errorBuilder: (context, error, stackTrace) {
-                                      return Icon(Icons.person, color: Colors.grey[600], size: 28);
+                                      return Icon(
+                                        Icons.person,
+                                        color: Colors.grey[600],
+                                        size: 28,
+                                      );
                                     },
                                   )
-                                : Icon(Icons.person, color: Colors.grey[600], size: 28),
+                                : Icon(
+                                    Icons.person,
+                                    color: Colors.grey[600],
+                                    size: 28,
+                                  ),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -892,7 +873,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   // 주제 헤더
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
                         Container(
@@ -902,7 +886,11 @@ class _SearchScreenState extends State<SearchScreen> {
                             color: Colors.grey[200],
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(Icons.tag, color: Colors.grey[600], size: 28),
+                          child: Icon(
+                            Icons.tag,
+                            color: Colors.grey[600],
+                            size: 28,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -1002,10 +990,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   Text(
                     '명언 ${quoteCount}개',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                   ),
                 ],
               ),
@@ -1018,7 +1003,12 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   // 저자 팝업 내 명언 카드
-  Widget _buildAuthorQuoteCard(String content, String? quoteId, String? tag, String author) {
+  Widget _buildAuthorQuoteCard(
+    String content,
+    String? quoteId,
+    String? tag,
+    String author,
+  ) {
     return StatefulBuilder(
       builder: (context, setCardState) {
         final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
@@ -1054,7 +1044,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   if (tag != null && tag.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(20),
@@ -1132,7 +1125,11 @@ class _SearchScreenState extends State<SearchScreen> {
                         _getAuthorImagePath(author)!,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          return Icon(Icons.person, color: Colors.grey[600], size: 24);
+                          return Icon(
+                            Icons.person,
+                            color: Colors.grey[600],
+                            size: 24,
+                          );
                         },
                       )
                     : Icon(Icons.person, color: Colors.grey[600], size: 24),
@@ -1200,7 +1197,14 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildContentBox(String title, String content, String? quoteId, String? tag, String? imageFile, String? resonerEng) {
+  Widget _buildContentBox(
+    String title,
+    String content,
+    String? quoteId,
+    String? tag,
+    String? imageFile,
+    String? resonerEng,
+  ) {
     return StatefulBuilder(
       builder: (context, setCardState) {
         final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
@@ -1231,22 +1235,36 @@ class _SearchScreenState extends State<SearchScreen> {
                       width: 36,
                       height: 36,
                       color: Colors.grey[200],
-                      child: quoteId != null && _requestQuoteImages.containsKey(quoteId)
+                      child:
+                          quoteId != null &&
+                              _requestQuoteImages.containsKey(quoteId)
                           ? Image.network(
                               _requestQuoteImages[quoteId]!,
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) =>
-                                  Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                                  Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: Colors.grey[400],
+                                  ),
                             )
                           : imagePath != null
-                              ? Image.asset(
-                                  imagePath,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Icon(Icons.person, size: 20, color: Colors.grey[400]);
-                                  },
-                                )
-                              : Icon(Icons.person, size: 20, color: Colors.grey[400]),
+                          ? Image.asset(
+                              imagePath,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.person,
+                                  size: 20,
+                                  color: Colors.grey[400],
+                                );
+                              },
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: 20,
+                              color: Colors.grey[400],
+                            ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1269,7 +1287,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   if (tag != null && tag.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(20),
