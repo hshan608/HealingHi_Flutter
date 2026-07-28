@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'dart:io';
+import 'installation_identity.dart';
 import 'nickname_generator.dart';
 import 'admin_page.dart';
 
@@ -18,6 +18,705 @@ class MyPageScreen extends StatefulWidget {
 
   @override
   State<MyPageScreen> createState() => _MyPageScreenState();
+}
+
+class _QuoteRequestPage extends StatefulWidget {
+  const _QuoteRequestPage({required this.deviceId, required this.displayName});
+
+  final String? deviceId;
+  final String displayName;
+
+  @override
+  State<_QuoteRequestPage> createState() => _QuoteRequestPageState();
+}
+
+class _QuoteRequestPageState extends State<_QuoteRequestPage> {
+  static const _fieldBackground = Color(0xFFFAFAFA);
+  static const _fieldBorder = Color(0xFFE0E0E0);
+  static const _hintColor = Color(0xFFA3A3A3);
+  static const _submitBlue = Color(0xFF538CD2);
+
+  final TextEditingController _quoteController = TextEditingController();
+  final TextEditingController _authorController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _categoryFieldKey = GlobalKey();
+  final GlobalKey _authorFieldKey = GlobalKey();
+  final GlobalKey _quoteFieldKey = GlobalKey();
+
+  List<String> _categories = <String>[];
+  String? _selectedCategory;
+  String? _categoryError;
+  String? _authorError;
+  String? _quoteError;
+  String? _submitError;
+  XFile? _selectedImage;
+  Uint8List? _imagePreviewBytes;
+  bool _isLoadingCategories = true;
+  bool _isSubmitting = false;
+  bool _isSubmitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    _quoteController.dispose();
+    _authorController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final result = await supabase
+          .from('quotes')
+          .select('tag_kr')
+          .not('tag_kr', 'is', null);
+      final seen = <String>{};
+      for (final row in result as List) {
+        final tag = row['tag_kr']?.toString().trim();
+        if (tag != null && tag.isNotEmpty) seen.add(tag);
+      }
+      if (!mounted) return;
+      setState(() {
+        _categories = seen.toList()..sort();
+        _isLoadingCategories = false;
+      });
+    } catch (error) {
+      debugPrint('카테고리 로드 실패: $error');
+      if (!mounted) return;
+      setState(() => _isLoadingCategories = false);
+    }
+  }
+
+  Future<void> _pickAuthorImage() async {
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: image.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      maxWidth: 1080,
+      maxHeight: 1080,
+      compressQuality: 80,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: '사진 영역 설정',
+          toolbarColor: Colors.white,
+          toolbarWidgetColor: Colors.black87,
+          activeControlsWidgetColor: _appMutedGreen,
+          backgroundColor: Colors.black,
+          cropStyle: CropStyle.circle,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+          hideBottomControls: true,
+          showCropGrid: false,
+        ),
+        IOSUiSettings(
+          title: '사진 영역 설정',
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
+          rotateButtonsHidden: true,
+          rotateClockwiseButtonHidden: true,
+          aspectRatioPickerButtonHidden: true,
+        ),
+      ],
+    );
+
+    if (croppedFile == null) return;
+    final bytes = await File(croppedFile.path).readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _selectedImage = XFile(croppedFile.path);
+      _imagePreviewBytes = bytes;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+
+    final categoryMissing = _selectedCategory == null;
+    final authorMissing = _authorController.text.trim().isEmpty;
+    final quoteMissing = _quoteController.text.trim().isEmpty;
+
+    setState(() {
+      _categoryError = categoryMissing ? '카테고리를 선택해 주세요.' : null;
+      _authorError = authorMissing ? '저자를 입력해 주세요.' : null;
+      _quoteError = quoteMissing ? '명언 내용을 입력해 주세요.' : null;
+      _submitError = null;
+    });
+
+    final firstInvalidKey = categoryMissing
+        ? _categoryFieldKey
+        : authorMissing
+        ? _authorFieldKey
+        : quoteMissing
+        ? _quoteFieldKey
+        : null;
+    if (firstInvalidKey != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToField(firstInvalidKey);
+      });
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final insertResult = await supabase
+          .from('request_quotes')
+          .insert({
+            'text_kr': _quoteController.text.trim(),
+            'resoner_kr': _authorController.text.trim(),
+            'tag_kr': _selectedCategory,
+            'device_id': widget.deviceId,
+          })
+          .select('id')
+          .single();
+
+      final requestQuoteId = insertResult['id'];
+      if (_selectedImage != null) {
+        try {
+          final bytes = await File(_selectedImage!.path).readAsBytes();
+          final fileExt = _selectedImage!.path.split('.').last;
+          final filePath =
+              'quote_requests/${InstallationIdentity.id}/$requestQuoteId.$fileExt';
+
+          await supabase.storage
+              .from('avatars')
+              .uploadBinary(
+                filePath,
+                bytes,
+                fileOptions: FileOptions(
+                  upsert: true,
+                  contentType: 'image/$fileExt',
+                ),
+              );
+          final imageUrl = supabase.storage
+              .from('avatars')
+              .getPublicUrl(filePath);
+          await supabase.from('request_quote_images').insert({
+            'request_quote_idx': requestQuoteId,
+            'image_url': imageUrl,
+          });
+        } catch (error) {
+          debugPrint('이미지 업로드 실패 (신청은 완료됨): $error');
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _isSubmitted = true);
+    } catch (error) {
+      if (!mounted) return;
+      debugPrint('명언 신청 실패: $error');
+      setState(() {
+        _submitError = '신청을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
+      });
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _scrollToField(GlobalKey fieldKey) async {
+    final fieldContext = fieldKey.currentContext;
+    if (!mounted || fieldContext == null) return;
+    await Scrollable.ensureVisible(
+      fieldContext,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      alignment: 0.18,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isSubmitted) return _buildSuccessPage();
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '명언 신청',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 188,
+                child: ClipRect(
+                  child: Image.asset(
+                    'assets/quotes_illust.png',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              _buildIntroduction(),
+              const SizedBox(height: 124),
+              _buildLabel('명언 카테고리', '필수'),
+              const SizedBox(height: 14),
+              Container(key: _categoryFieldKey, child: _buildCategoryField()),
+              const SizedBox(height: 44),
+              _buildLabel('저자', '필수'),
+              const SizedBox(height: 14),
+              Column(
+                key: _authorFieldKey,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 47,
+                    child: TextField(
+                      controller: _authorController,
+                      maxLength: 50,
+                      style: const TextStyle(fontSize: 17),
+                      onChanged: (value) {
+                        if (_authorError != null && value.trim().isNotEmpty) {
+                          setState(() => _authorError = null);
+                        }
+                      },
+                      decoration: _inputDecoration(
+                        hintText: '저자를 입력해 주세요.',
+                        hasError: _authorError != null,
+                      ).copyWith(counterText: ''),
+                    ),
+                  ),
+                  if (_authorError != null) _buildFieldError(_authorError!),
+                ],
+              ),
+              const SizedBox(height: 44),
+              _buildLabel('명언 내용', '필수'),
+              const SizedBox(height: 14),
+              Column(
+                key: _quoteFieldKey,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: 169,
+                    child: TextField(
+                      controller: _quoteController,
+                      maxLines: null,
+                      expands: true,
+                      maxLength: 300,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: const TextStyle(fontSize: 17, height: 1.45),
+                      onChanged: (value) {
+                        if (_quoteError != null && value.trim().isNotEmpty) {
+                          setState(() => _quoteError = null);
+                        }
+                      },
+                      decoration: _inputDecoration(
+                        hintText: '명언 내용을 입력해 주세요.',
+                        hasError: _quoteError != null,
+                        contentPadding: const EdgeInsets.fromLTRB(
+                          20,
+                          17,
+                          20,
+                          17,
+                        ),
+                      ).copyWith(counterText: ''),
+                    ),
+                  ),
+                  if (_quoteError != null) _buildFieldError(_quoteError!),
+                ],
+              ),
+              const SizedBox(height: 44),
+              _buildLabel('저자 사진', '선택'),
+              const SizedBox(height: 14),
+              _buildImagePicker(),
+              const SizedBox(height: 48),
+              if (_submitError != null) ...[
+                _buildSubmitError(_submitError!),
+                const SizedBox(height: 16),
+              ],
+              SizedBox(
+                width: double.infinity,
+                height: 53,
+                child: ElevatedButton.icon(
+                  onPressed: _isSubmitting ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _submitBlue,
+                    disabledBackgroundColor: _submitBlue.withValues(
+                      alpha: 0.55,
+                    ),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(32),
+                    ),
+                  ),
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.note_add_outlined, size: 24),
+                  label: Text(
+                    _isSubmitting ? '신청 중...' : '명언 신청하기',
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntroduction() {
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        children: [
+          Text.rich(
+            textAlign: TextAlign.center,
+            TextSpan(
+              style: const TextStyle(fontSize: 17, height: 1.5),
+              children: [
+                TextSpan(
+                  text: widget.displayName,
+                  style: const TextStyle(
+                    color: _appMutedGreen,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const TextSpan(
+                  text: '님,\n',
+                  style: TextStyle(color: Color(0xFF3B3B3B)),
+                ),
+                const TextSpan(
+                  text: '힐링 하이를 많은 분들과 함께해 주셔서 감사해요!',
+                  style: TextStyle(color: Color(0xFF3B3B3B)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            '여러분만의 따뜻한 말,\n누군가에게 위로가 되었던 한마디가 있으신가요?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            '아래에 내용을 남겨주시면\n힐링 하이에서 소개될 수 있도록 소중히 살펴볼게요.\n\n'
+            '여러분의 따뜻한 마음을 기다릴게요.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF3B3B3B),
+              fontSize: 17,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLabel(String title, String requirement) {
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '$title ',
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 19,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: '($requirement)',
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String hintText,
+    bool hasError = false,
+    EdgeInsetsGeometry contentPadding = const EdgeInsets.symmetric(
+      horizontal: 20,
+      vertical: 12,
+    ),
+  }) {
+    final borderColor = hasError ? Colors.red : _fieldBorder;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(20),
+      borderSide: BorderSide(color: borderColor),
+    );
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: const TextStyle(color: _hintColor, fontSize: 17),
+      filled: true,
+      fillColor: _fieldBackground,
+      contentPadding: contentPadding,
+      border: border,
+      enabledBorder: border,
+      focusedBorder: border.copyWith(
+        borderSide: BorderSide(
+          color: hasError ? Colors.red : _submitBlue,
+          width: 1.4,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 47,
+          padding: const EdgeInsets.only(left: 20, right: 16),
+          decoration: BoxDecoration(
+            color: _fieldBackground,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: _categoryError == null ? _fieldBorder : Colors.red,
+            ),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedCategory,
+              isExpanded: true,
+              icon: const Icon(
+                Icons.arrow_drop_down,
+                size: 22,
+                color: Color(0xFF777777),
+              ),
+              hint: Text(
+                _isLoadingCategories ? '카테고리 로딩 중...' : '카테고리를 선택해 주세요.',
+                style: const TextStyle(color: _hintColor, fontSize: 17),
+              ),
+              items: _categories
+                  .map(
+                    (tag) => DropdownMenuItem<String>(
+                      value: tag,
+                      child: Text(tag, style: const TextStyle(fontSize: 17)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isLoadingCategories
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _selectedCategory = value;
+                        if (value != null) _categoryError = null;
+                      });
+                    },
+            ),
+          ),
+        ),
+        if (_categoryError != null) _buildFieldError(_categoryError!),
+      ],
+    );
+  }
+
+  Widget _buildFieldError(String message) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.error_outline, color: Colors.red, size: 16),
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Colors.red,
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubmitError(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFC9C9)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFFB42318),
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _submitError = null),
+            constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+            padding: EdgeInsets.zero,
+            icon: const Icon(Icons.close, color: Color(0xFFB42318), size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImagePicker() {
+    return GestureDetector(
+      onTap: _pickAuthorImage,
+      child: Container(
+        width: double.infinity,
+        height: 169,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: _fieldBackground,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _fieldBorder),
+        ),
+        child: _imagePreviewBytes == null
+            ? const Center(
+                child: Icon(
+                  Icons.image_outlined,
+                  size: 42,
+                  color: Color(0xFF777777),
+                ),
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(_imagePreviewBytes!, fit: BoxFit.cover),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedImage = null;
+                          _imagePreviewBytes = null;
+                        });
+                      },
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildSuccessPage() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.check_circle_outline,
+                  color: _appMutedGreen,
+                  size: 68,
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  '신청이 완료되었습니다!',
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  '관리자 검토 후 등록됩니다.',
+                  style: TextStyle(color: Color(0xFF777777), fontSize: 15),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  height: 53,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _submitBlue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(32),
+                      ),
+                    ),
+                    child: const Text(
+                      '확인',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _MyPageScreenState extends State<MyPageScreen> {
@@ -58,6 +757,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return ((_shareCount / target) * 100).clamp(0, 100).toInt();
   }
 
+  bool get _hasChangedProfileImage => _profileImageUrl.trim().isNotEmpty;
+
+  bool get _hasChangedName {
+    final deviceId = _deviceId;
+    final savedName = _name.trim();
+    if (deviceId == null || savedName.isEmpty) return false;
+    return savedName != generateNickname(deviceId);
+  }
+
   // 언어 옵션
   final Map<String, String> _languageOptions = {'kor': '한국어', 'eng': '영어'};
 
@@ -75,35 +783,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   // 디바이스 고유 ID 가져오기
   Future<void> _getDeviceId() async {
-    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-    String? deviceId;
-
     try {
-      if (Platform.isAndroid) {
-        AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-        deviceId = androidInfo.id; // Android ID
-      } else if (Platform.isIOS) {
-        IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
-        deviceId = iosInfo.identifierForVendor; // iOS Vendor ID
-      } else if (Platform.isWindows) {
-        WindowsDeviceInfo windowsInfo = await deviceInfo.windowsInfo;
-        deviceId = windowsInfo.deviceId;
-      } else if (Platform.isLinux) {
-        LinuxDeviceInfo linuxInfo = await deviceInfo.linuxInfo;
-        deviceId = linuxInfo.machineId;
-      } else if (Platform.isMacOS) {
-        MacOsDeviceInfo macOsInfo = await deviceInfo.macOsInfo;
-        deviceId = macOsInfo.systemGUID;
-      }
+      final deviceId = InstallationIdentity.id;
 
       setState(() {
         _deviceId = deviceId;
       });
 
-      // 디바이스 ID를 가져온 후 사용자 정보 로드
-      if (deviceId != null) {
-        await _loadUserData();
-      }
+      await _loadUserData();
     } catch (e) {
       print('디바이스 ID 가져오기 실패: $e');
       setState(() {
@@ -209,9 +896,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   Future<void> _pickAndUploadImage() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-      );
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
       if (image == null) return;
 
@@ -344,14 +1029,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
       final newName = _nameController.text.trim();
 
       // 닉네임 중복 확인 (자신의 device_id 제외)
-      final existing = await supabase
-          .from('users')
-          .select('device_id')
-          .eq('user_id', newName)
-          .neq('device_id', _deviceId!)
-          .maybeSingle();
+      final isAvailable = await supabase.rpc(
+        'is_nickname_available',
+        params: {'p_user_id': newName},
+      );
 
-      if (existing != null) {
+      if (isAvailable != true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -430,16 +1113,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     _adminTapCount++;
                     if (_adminTapCount >= 5) {
                       _adminTapCount = 0;
-                      const allowedIds = {
-                        'BP2A.250605.031.A3',
-                        'BE2A.250530.026.D1',
-                      };
-                      if (_deviceId != null && allowedIds.contains(_deviceId)) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AdminPage()),
-                        );
-                      }
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AdminPage()),
+                      );
                     }
                   },
                   child: const Row(
@@ -533,7 +1210,20 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 40),
+                if (!_hasChangedProfileImage) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    '공유 10회 완료 후 프로필 사진 설정 가능',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFFE58B8B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ] else
+                  const SizedBox(height: 40),
 
                 // 이름 입력 필드 (공유 1회 이상이면 편집 가능)
                 if (_shareCount >= 1)
@@ -550,6 +1240,18 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         ? generateNickname(_deviceId!)
                         : '로딩중...',
                   ),
+                if (!_hasChangedName) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    '공유 1회 완료 후 이름 설정 가능',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFFE58B8B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
 
                 // 언어 선택 필드
@@ -698,7 +1400,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: _nicknameSaved ? _appMutedGreen : Colors.grey[400],
+                          color: _nicknameSaved
+                              ? _appMutedGreen
+                              : Colors.grey[400],
                           shape: BoxShape.circle,
                         ),
                         child: AnimatedSwitcher(
@@ -784,64 +1488,21 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _loadShareLeaderboard() async {
-    final responses = await Future.wait([
-      supabase.from('users').select('device_id, user_id'),
-      supabase.from('device_shares').select('device_id, share_count'),
-    ]);
+    final response = await supabase.rpc('get_share_leaderboard');
+    final rows = List<Map<String, dynamic>>.from(response as List);
 
-    final userNames = <String, String>{};
-    final shareCounts = <String, int>{};
-    final deviceIds = <String>{};
-
-    for (final row in List<Map<String, dynamic>>.from(responses[0])) {
-      final deviceId = row['device_id']?.toString();
-      if (deviceId == null || deviceId.isEmpty) continue;
-      final userName = row['user_id']?.toString().trim();
-      if (userName != null && userName.isNotEmpty) {
-        userNames[deviceId] = userName;
-      }
-      deviceIds.add(deviceId);
-    }
-
-    for (final row in List<Map<String, dynamic>>.from(responses[1])) {
-      final deviceId = row['device_id']?.toString();
-      if (deviceId == null || deviceId.isEmpty) continue;
-      final shareCount = row['share_count'];
-      shareCounts[deviceId] = shareCount is int
-          ? shareCount
-          : int.tryParse(shareCount?.toString() ?? '') ?? 0;
-      deviceIds.add(deviceId);
-    }
-
-    if (_deviceId != null) deviceIds.add(_deviceId!);
-
-    final entries = deviceIds.map((deviceId) {
+    return rows.map((row) {
+      final count = row['share_count'];
+      final rank = row['rank'];
       return <String, dynamic>{
-        'deviceId': deviceId,
-        'name': userNames[deviceId] ?? generateNickname(deviceId),
-        'shareCount': shareCounts[deviceId] ?? 0,
-        'isCurrentUser': deviceId == _deviceId,
+        'name': row['display_name']?.toString() ?? '익명',
+        'shareCount': count is int
+            ? count
+            : int.tryParse(count?.toString() ?? '') ?? 0,
+        'isCurrentUser': row['is_current_user'] == true,
+        'rank': rank is int ? rank : int.tryParse(rank?.toString() ?? '') ?? 0,
       };
     }).toList();
-
-    entries.sort((a, b) {
-      final countComparison = (b['shareCount'] as int).compareTo(
-        a['shareCount'] as int,
-      );
-      if (countComparison != 0) return countComparison;
-      return (a['name'] as String).compareTo(b['name'] as String);
-    });
-
-    int? previousCount;
-    var currentRank = 0;
-    for (var index = 0; index < entries.length; index++) {
-      final count = entries[index]['shareCount'] as int;
-      if (previousCount != count) currentRank = index + 1;
-      entries[index]['rank'] = currentRank;
-      previousCount = count;
-    }
-
-    return entries;
   }
 
   Future<void> _showShareLeaderboard() async {
@@ -943,7 +1604,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               ? const Center(child: Text('표시할 사용자가 없습니다.'))
                               : ListView.separated(
                                   itemCount: entries.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 8),
                                   itemBuilder: (context, index) {
                                     final entry = entries[index];
                                     final isCurrentUser =
@@ -951,7 +1613,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                     return Container(
                                       decoration: BoxDecoration(
                                         color: isCurrentUser
-                                            ? _appMutedGreen.withValues(alpha: 0.1)
+                                            ? _appMutedGreen.withValues(
+                                                alpha: 0.1,
+                                              )
                                             : Colors.white,
                                         borderRadius: BorderRadius.circular(14),
                                       ),
@@ -1067,14 +1731,23 @@ class _MyPageScreenState extends State<MyPageScreen> {
       width: double.infinity,
       height: 52,
       child: ElevatedButton.icon(
-        onPressed: () => _showQuoteRequestForm(),
+        onPressed: () {
+          final fallbackName = _deviceId != null
+              ? generateNickname(_deviceId!)
+              : '';
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => _QuoteRequestPage(
+                deviceId: _deviceId,
+                displayName: _name.isNotEmpty ? _name : fallbackName,
+              ),
+            ),
+          );
+        },
         icon: const Icon(Icons.edit_note, size: 22),
         label: const Text(
           '명언 신청',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: _appMutedGreen,
@@ -1088,6 +1761,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
+  // 이전 하단 시트 구현은 기존 데이터 흐름 참고용으로 유지한다.
+  // ignore: unused_element
   Future<void> _showQuoteRequestForm() async {
     final quoteController = TextEditingController();
     final authorController = TextEditingController();
@@ -1149,10 +1824,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     const SizedBox(height: 8),
                     Text(
                       '관리자 검토 후 등록됩니다.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                     ),
                     const SizedBox(height: 24),
                     SizedBox(
@@ -1202,9 +1874,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         ),
                       ),
                       // 안내 문구와 입력 폼을 초기 화면보다 약 30% 아래에서 시작한다.
-                      SizedBox(
-                        height: MediaQuery.sizeOf(context).height * 0.3,
-                      ),
+                      SizedBox(height: MediaQuery.sizeOf(context).height * 0.3),
 
                       // 제목
                       SizedBox(
@@ -1216,7 +1886,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               TextSpan(
                                 children: [
                                   TextSpan(
-                                    text: _name.isNotEmpty ? _name : (_deviceId != null ? generateNickname(_deviceId!) : ''),
+                                    text: _name.isNotEmpty
+                                        ? _name
+                                        : (_deviceId != null
+                                              ? generateNickname(_deviceId!)
+                                              : ''),
                                     style: const TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
@@ -1367,13 +2041,21 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             value: selectedCategory,
                             isExpanded: true,
                             hint: Text(
-                              categories.isEmpty ? '카테고리 로딩 중...' : '카테고리를 선택해주세요',
-                              style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                              categories.isEmpty
+                                  ? '카테고리 로딩 중...'
+                                  : '카테고리를 선택해주세요',
+                              style: TextStyle(
+                                color: Colors.grey[400],
+                                fontSize: 14,
+                              ),
                             ),
                             items: categories.map((tag) {
                               return DropdownMenuItem<String>(
                                 value: tag,
-                                child: Text(tag, style: const TextStyle(fontSize: 14)),
+                                child: Text(
+                                  tag,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
                               );
                             }).toList(),
                             onChanged: (value) {
@@ -1406,7 +2088,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                           final croppedFile = await ImageCropper().cropImage(
                             sourcePath: image.path,
-                            aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+                            aspectRatio: const CropAspectRatio(
+                              ratioX: 1,
+                              ratioY: 1,
+                            ),
                             maxWidth: 1080,
                             maxHeight: 1080,
                             compressQuality: 80,
@@ -1436,7 +2121,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           );
 
                           if (croppedFile == null) return;
-                          final bytes = await File(croppedFile.path).readAsBytes();
+                          final bytes = await File(
+                            croppedFile.path,
+                          ).readAsBytes();
                           setModalState(() {
                             selectedImage = XFile(croppedFile.path);
                             imagePreviewBytes = bytes;
@@ -1559,9 +2246,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                               if (selectedImage != null) {
                                 try {
-                                  final bytes = await File(selectedImage!.path).readAsBytes();
-                                  final fileExt = selectedImage!.path.split('.').last;
-                                  final filePath = 'quote_requests/$requestQuoteId.$fileExt';
+                                  final bytes = await File(
+                                    selectedImage!.path,
+                                  ).readAsBytes();
+                                  final fileExt = selectedImage!.path
+                                      .split('.')
+                                      .last;
+                                  final filePath =
+                                      'quote_requests/${InstallationIdentity.id}/$requestQuoteId.$fileExt';
 
                                   await supabase.storage
                                       .from('avatars')
@@ -1581,9 +2273,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                   await supabase
                                       .from('request_quote_images')
                                       .insert({
-                                    'request_quote_idx': requestQuoteId,
-                                    'image_url': imageUrl,
-                                  });
+                                        'request_quote_idx': requestQuoteId,
+                                        'image_url': imageUrl,
+                                      });
                                 } catch (imgErr) {
                                   print('이미지 업로드 실패 (신청은 완료됨): $imgErr');
                                 }
@@ -1669,7 +2361,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
             const SizedBox(width: 8),
             GestureDetector(
               onTap: _showAchievementInfoDialog,
-              child: const Icon(Icons.help_outline, color: Colors.grey, size: 16),
+              child: const Icon(
+                Icons.help_outline,
+                color: Colors.grey,
+                size: 16,
+              ),
             ),
           ],
         ),
