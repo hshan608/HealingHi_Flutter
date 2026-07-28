@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:like_button/like_button.dart';
 import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
+import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -412,6 +413,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         ],
                       ),
                       child: TextField(
+                        key: TutorialTargets.searchField,
                         controller: _searchController,
                         focusNode: _searchFocusNode,
                         onChanged: _performSearch,
@@ -461,6 +463,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
                       child: Row(
+                        key: TutorialTargets.searchTabs,
                         children: [
                           Expanded(
                             child: GestureDetector(

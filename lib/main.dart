@@ -320,11 +320,13 @@ class _MainScreenState extends State<MainScreen> {
                 label: '',
               ),
               BottomNavigationBarItem(
-                icon: Icon(
-                  Icons.favorite_border,
-                  color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
+                icon: KeyedSubtree(
+                  key: TutorialTargets.bookmarkTab,
+                  child: Icon(
+                    _currentIndex == 2 ? Icons.favorite : Icons.favorite_border,
+                    color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
+                  ),
                 ),
-                activeIcon: const Icon(Icons.favorite, color: bookmarkPink),
                 label: '',
               ),
               BottomNavigationBarItem(

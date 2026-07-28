@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
+import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -259,6 +260,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                                 quote['resoner_eng']?.toString(),
                               ),
                               requestImageUrl: _requestQuoteImages[quoteId],
+                              isTutorialTarget: index == 0,
                               onRemoveFromDB: _deleteFromSupabase,
                               onRemoveFromList: _removeFromList,
                               onShare: _shareContent,
@@ -290,6 +292,7 @@ class _AnimatedBookmarkCard extends StatefulWidget {
   final String? tag;
   final String? resonerImagePath;
   final String? requestImageUrl;
+  final bool isTutorialTarget;
   final Future<void> Function(String?) onRemoveFromDB;
   final void Function(String?) onRemoveFromList;
   final void Function(String, String) onShare;
@@ -302,6 +305,7 @@ class _AnimatedBookmarkCard extends StatefulWidget {
     this.tag,
     this.resonerImagePath,
     this.requestImageUrl,
+    required this.isTutorialTarget,
     required this.onRemoveFromDB,
     required this.onRemoveFromList,
     required this.onShare,
@@ -484,6 +488,9 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                   const Spacer(),
                   // 하트 버튼 (커스텀 애니메이션)
                   GestureDetector(
+                    key: widget.isTutorialTarget
+                        ? TutorialTargets.bookmarkLike
+                        : null,
                     onTap: _isRemoving ? null : _handleUnlike,
                     child: AnimatedBuilder(
                       animation: _heartScale,

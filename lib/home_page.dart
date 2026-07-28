@@ -12,6 +12,7 @@ import 'dart:ui' as ui;
 import 'ad_helper.dart';
 import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
+import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -325,114 +326,111 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 공유 카드 위젯 (이미지로 캡처용 - 깔끔한 디자인)
-  Widget _buildShareCardContent(String author, String content, String? tag) {
+  // 공유 카드 위젯 (이미지 캡처용)
+  Widget _buildShareCardContent({
+    required String author,
+    required String content,
+    ImageProvider<Object>? authorImage,
+  }) {
     return Container(
-      width: 375,
-      color: const Color(0xFFDDE7DE),
-      padding: const EdgeInsets.all(24),
+      width: 420,
+      color: const Color(0xFFE3ECE4),
+      padding: const EdgeInsets.fromLTRB(26, 34, 26, 34),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+        constraints: const BoxConstraints(minHeight: 340),
+        padding: const EdgeInsets.fromLTRB(38, 36, 36, 26),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 따옴표 장식
-            const Text(
-              '"',
-              style: TextStyle(
-                fontSize: 56,
-                color: Color(0xFF9DC3A0),
-                height: 0.8,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Pretendard',
-              ),
+            Image.asset(
+              'assets/share_quote_icon.png',
+              width: 42,
+              height: 42,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
             ),
-            const SizedBox(height: 16),
-            // 명언 텍스트
+            const SizedBox(height: 34),
             Text(
               content,
               style: const TextStyle(
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.w300,
-                color: Color(0xFF333333),
-                height: 1.7,
+                color: Color(0xFF555555),
+                height: 1.65,
                 fontFamily: 'Pretendard',
               ),
             ),
-            const SizedBox(height: 24),
-            // 저자
-            Text(
-              '— $author',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: Colors.grey[600],
-                fontFamily: 'Pretendard',
-              ),
-            ),
-            if (tag != null && tag.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDDE7DE),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '# $tag',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF5D8A62),
-                    fontFamily: 'Pretendard',
+            const SizedBox(height: 40),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ClipOval(
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    color: const Color(0xFFF0F0F0),
+                    child: authorImage == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 17,
+                            color: Color(0xFFAAAAAA),
+                          )
+                        : Image(
+                            image: authorImage,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.person,
+                                  size: 17,
+                                  color: Color(0xFFAAAAAA),
+                                ),
+                          ),
                   ),
                 ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            const Divider(color: Color(0xFFEEEEEE), thickness: 1),
-            const SizedBox(height: 12),
-            // 앱 브랜딩
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF7AAE80),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Healing Hi',
-                    style: TextStyle(
-                      fontSize: 13,
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    author,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF7AAE80),
-                      letterSpacing: 0.5,
+                      color: Color(0xFF666666),
                       fontFamily: 'Pretendard',
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF7AAE80),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            const Divider(color: Color(0xFFE8E8E8), thickness: 1, height: 1),
+            const SizedBox(height: 28),
+            const Center(
+              child: Text(
+                '당신의 하루에 머무는 한마디',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: Color(0xFF555555),
+                  fontFamily: 'Pretendard',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Center(
+              child: Text(
+                '힐링 하이',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: Color(0xFF555555),
+                  fontFamily: 'Pretendard',
+                ),
               ),
             ),
           ],
@@ -445,9 +443,37 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _captureAndShareQuoteImage({
     required String author,
     required String content,
-    required String? tag,
     required String? quoteId,
+    required String? imageFile,
+    required String? resonerEng,
   }) async {
+    if (!mounted) return;
+
+    final requestImageUrl = quoteId == null
+        ? null
+        : _requestQuoteImages[quoteId];
+    final resolvedImagePath = requestImageUrl == null
+        ? ResonerImageHelper.resolve(imageFile, resonerEng)
+        : null;
+    final ImageProvider<Object>? authorImage = requestImageUrl != null
+        ? NetworkImage(requestImageUrl)
+        : resolvedImagePath != null
+        ? AssetImage(resolvedImagePath)
+        : null;
+
+    if (authorImage != null) {
+      try {
+        await precacheImage(
+          authorImage,
+          context,
+        ).timeout(const Duration(seconds: 3));
+      } catch (_) {
+        // 이미지 로드 실패 시 기본 프로필 아이콘을 사용한다.
+      }
+    }
+
+    if (!mounted) return;
+
     final key = GlobalKey();
     late OverlayEntry entry;
 
@@ -459,7 +485,11 @@ class _HomeScreenState extends State<HomeScreen> {
           type: MaterialType.transparency,
           child: RepaintBoundary(
             key: key,
-            child: _buildShareCardContent(author, content, tag),
+            child: _buildShareCardContent(
+              author: author,
+              content: content,
+              authorImage: authorImage,
+            ),
           ),
         ),
       ),
@@ -487,7 +517,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final pngBytes = byteData.buffer.asUint8List();
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/healinghi_quote.png');
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final file = File('${tempDir.path}/healinghi_quote_$timestamp.png');
       await file.writeAsBytes(pngBytes);
 
       entry.remove();
@@ -555,6 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String? tag,
     String? imageFile,
     String? resonerEng,
+    bool isTutorialTarget,
   ) {
     final resolvedImagePath =
         quoteId != null && _requestQuoteImages.containsKey(quoteId)
@@ -573,6 +605,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         },
         child: Container(
+          key: isTutorialTarget ? TutorialTargets.homeCard : null,
           margin: const EdgeInsets.only(bottom: 16.0),
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
           decoration: BoxDecoration(
@@ -679,6 +712,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Spacer(),
                   // 좋아요 버튼
                   LikeButton(
+                    key: isTutorialTarget ? TutorialTargets.homeLike : null,
                     size: 32,
                     isLiked:
                         quoteId != null && _savedQuoteIds.contains(quoteId),
@@ -704,12 +738,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   // 공유 버튼 (이미지 카드로 공유)
                   IconButton(
+                    key: isTutorialTarget ? TutorialTargets.homeShare : null,
                     onPressed: () {
                       _captureAndShareQuoteImage(
                         author: title,
                         content: content,
-                        tag: tag,
                         quoteId: quoteId,
+                        imageFile: imageFile,
+                        resonerEng: resonerEng,
                       );
                     },
                     icon: Icon(Icons.share, color: Colors.grey[600]),
@@ -769,6 +805,7 @@ class _HomeScreenState extends State<HomeScreen> {
           quote['tag_kr']?.toString(),
           quote['imagefile']?.toString(),
           quote['resoner_eng']?.toString(),
+          quoteIndex == 0,
         );
       },
     );

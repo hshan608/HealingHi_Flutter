@@ -85,23 +85,23 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/new_ico.png"
   min_sdk_android: 21 # android min sdk min:16, default 21
   # Android Adaptive Icon 설정 (아이콘이 잘리지 않도록)
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  adaptive_icon_foreground: "assets/new_ico.png"
   web:
     generate: true
-    image_path: "assets/icon/app_icon.png"
+    image_path: "assets/new_ico.png"
     background_color: "#hexcode"
     theme_color: "#hexcode"
   windows:
     generate: true
-    image_path: "assets/icon/app_icon.png"
+    image_path: "assets/new_ico.png"
     icon_size: 48 # min:48, max:256, default: 48
   macos:
     generate: true
-    image_path: "assets/icon/app_icon.png"
+    image_path: "assets/new_ico.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

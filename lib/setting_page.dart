@@ -7,6 +7,7 @@ import 'dart:io';
 import 'installation_identity.dart';
 import 'nickname_generator.dart';
 import 'admin_page.dart';
+import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -894,6 +895,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   // 이미지 선택 및 업로드
   Future<void> _pickAndUploadImage() async {
+    if (_shareCount < 10) {
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '프로필 사진은 공유 10회 완료 후 설정할 수 있어요. '
+              '(현재 $_shareCount/10회)',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -1108,6 +1125,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
               children: [
                 // 상단 제목
                 GestureDetector(
+                  key: TutorialTargets.profileTitle,
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     _adminTapCount++;
@@ -1136,6 +1154,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                 // 프로필 이미지와 월계관
                 GestureDetector(
+                  key: TutorialTargets.profileImage,
                   onTap: _pickAndUploadImage,
                   child: Container(
                     width: 120,
@@ -1227,18 +1246,24 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                 // 이름 입력 필드 (공유 1회 이상이면 편집 가능)
                 if (_shareCount >= 1)
-                  _buildInputField(
-                    label: 'ID 또는 이름',
-                    controller: _nameController,
-                    hintText: 'ID 또는 이름을 입력하세요',
-                    hasCheckIcon: true,
+                  KeyedSubtree(
+                    key: TutorialTargets.profileName,
+                    child: _buildInputField(
+                      label: 'ID 또는 이름',
+                      controller: _nameController,
+                      hintText: 'ID 또는 이름을 입력하세요',
+                      hasCheckIcon: true,
+                    ),
                   )
                 else
-                  _buildReadOnlyNameField(
-                    label: 'ID 또는 이름',
-                    value: _deviceId != null
-                        ? generateNickname(_deviceId!)
-                        : '로딩중...',
+                  KeyedSubtree(
+                    key: TutorialTargets.profileName,
+                    child: _buildReadOnlyNameField(
+                      label: 'ID 또는 이름',
+                      value: _deviceId != null
+                          ? generateNickname(_deviceId!)
+                          : '로딩중...',
+                    ),
                   ),
                 if (!_hasChangedName) ...[
                   const SizedBox(height: 8),
@@ -1259,16 +1284,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 // const SizedBox(height: 30),
 
                 // 공유 등급/개 섹션
-                _buildInfoSection(
-                  title: '공유 등급/개',
-                  value: _shareLevel,
-                  valueColor: Colors.red,
-                  onSearchTap: _showShareLeaderboard,
+                KeyedSubtree(
+                  key: TutorialTargets.profileShareLevel,
+                  child: _buildInfoSection(
+                    title: '공유 등급/개',
+                    value: _shareLevel,
+                    valueColor: Colors.red,
+                    onSearchTap: _showShareLeaderboard,
+                  ),
                 ),
                 const SizedBox(height: 20),
 
                 // 공유 달성도 섹션
-                _buildAchievementSection(),
+                KeyedSubtree(
+                  key: TutorialTargets.profileAchievement,
+                  child: _buildAchievementSection(),
+                ),
 
                 // 명언 신청 버튼 (공유 5회 이상 시 표시)
                 if (_shareCount >= 5) ...[
@@ -2327,20 +2358,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   Future<void> _showAchievementInfoDialog() async {
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('공유 달성도 안내'),
-        content: const Text(
-          '공유 달성도의 게이지가 채워지면 추가하고 싶은 문구를 제작자에게 보낼 수 있어요.\n\n'
-          '여러분의 말이나 원하는 저자의 명언을 자유롭게 추가해보세요.',
-          style: TextStyle(height: 1.6),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('확인'),
-          ),
-        ],
-      ),
+      builder: (context) => const _AchievementInfoDialog(),
     );
   }
 
@@ -2437,6 +2455,137 @@ class _MyPageScreenState extends State<MyPageScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AchievementInfoDialog extends StatelessWidget {
+  const _AchievementInfoDialog();
+
+  static const double _designWidth = 330;
+  static const double _designHeight = 497;
+
+  @override
+  Widget build(BuildContext context) {
+    final availableWidth = MediaQuery.sizeOf(context).width - 48;
+    final dialogWidth = availableWidth.clamp(0.0, _designWidth);
+    final scale = dialogWidth / _designWidth;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      child: SizedBox(
+        width: dialogWidth,
+        height: _designHeight * scale,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12 * scale),
+          child: FittedBox(
+            fit: BoxFit.fill,
+            child: SizedBox(
+              width: _designWidth,
+              height: _designHeight,
+              child: ColoredBox(
+                color: const Color(0xFFF6F4F1),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 29,
+                      top: 42,
+                      width: 271,
+                      height: 128,
+                      child: ClipRect(
+                        child: Image.asset(
+                          'assets/share_illust.png',
+                          fit: BoxFit.cover,
+                          alignment: const Alignment(0, -0.17),
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 192,
+                      child: Text(
+                        '공유 달성도란?',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      left: 16,
+                      right: 16,
+                      top: 234,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text:
+                                  '명언을 공유할 때마다\n'
+                                  '공유 달성도가 차곡차곡 올라가요.\n\n'
+                                  '달성도 ',
+                            ),
+                            TextSpan(
+                              text: '100%',
+                              style: TextStyle(
+                                color: _appMutedGreen,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            TextSpan(
+                              text:
+                                  '를 채우면,\n'
+                                  '원하는 명언을 제작자에게 신청할 수 있어요.\n\n'
+                                  '신청한 명언은 제작자 확인 후\n'
+                                  '힐링 하이에 소개될 수 있어요.',
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w400,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 30,
+                      top: 417,
+                      width: 269,
+                      height: 53,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _appMutedGreen,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(32),
+                          ),
+                        ),
+                        child: const Text(
+                          '확인했어요',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
