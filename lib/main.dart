@@ -164,6 +164,10 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   int _navSwitchCount = 0; // 탭 전환 횟수
   InterstitialAd? _interstitialAd;
+  late final TutorialProgressStore _tutorialStore;
+  Map<String, bool> _tutorialProgress = <String, bool>{};
+  bool _tutorialStateLoaded = false;
+  int _tutorialStepIndex = 0;
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -175,6 +179,8 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    _tutorialStore = TutorialProgressStore(supabase);
+    _loadTutorialProgress();
     _loadInterstitialAd();
   }
 
@@ -212,11 +218,72 @@ class _MainScreenState extends State<MainScreen> {
   void _onNavTap(int index) {
     if (index == _currentIndex) return; // 같은 탭 재탭은 카운트 제외
     _navSwitchCount++;
-    setState(() => _currentIndex = index);
+    setState(() {
+      _currentIndex = index;
+      _tutorialStepIndex = 0;
+    });
 
     if (_navSwitchCount % 5 == 0 && _interstitialAd != null) {
       _interstitialAd!.show();
       _interstitialAd = null;
+    }
+  }
+
+  Future<void> _loadTutorialProgress() async {
+    final progress = await _tutorialStore.load();
+    if (!mounted) return;
+    setState(() {
+      _tutorialProgress = progress;
+      _tutorialStateLoaded = true;
+    });
+  }
+
+  TutorialSection get _currentTutorialSection =>
+      TutorialSection.values[_currentIndex];
+
+  bool get _shouldShowTutorial =>
+      _tutorialStateLoaded &&
+      _tutorialProgress[_currentTutorialSection.storageKey] != true;
+
+  int _tutorialStepCount(TutorialSection section) {
+    switch (section) {
+      case TutorialSection.home:
+      case TutorialSection.search:
+        return 3;
+      case TutorialSection.bookmarks:
+      case TutorialSection.profile:
+        return 2;
+    }
+  }
+
+  void _advanceTutorial() {
+    final section = _currentTutorialSection;
+    if (_tutorialStepIndex + 1 < _tutorialStepCount(section)) {
+      setState(() => _tutorialStepIndex++);
+      return;
+    }
+    _completeTutorial(section);
+  }
+
+  Future<void> _completeTutorial(TutorialSection section) async {
+    final updatedProgress = <String, bool>{
+      ..._tutorialProgress,
+      section.storageKey: true,
+    };
+    setState(() {
+      _tutorialProgress = updatedProgress;
+      _tutorialStepIndex = 0;
+    });
+
+    try {
+      await _tutorialStore.save(updatedProgress);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('튜토리얼 완료 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'),
+        ),
+      );
     }
   }
 
@@ -226,50 +293,58 @@ class _MainScreenState extends State<MainScreen> {
     const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
     const bookmarkPink = Color(0xFFFF8787); // 보관함 하트 색상
 
-    return Scaffold(
-      body: _screens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
-        onTap: _onNavTap,
-        selectedItemColor: Colors.transparent, // 개별 색상 사용
-        unselectedItemColor: Colors.transparent, // 개별 색상 사용
-        iconSize: 24,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(
-              CupertinoIcons.quote_bubble,
-              color: _currentIndex == 0 ? activeGreen : inactiveGrey,
-            ),
-            label: '',
+    return Stack(
+      children: [
+        Scaffold(
+          body: _screens[_currentIndex],
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            currentIndex: _currentIndex,
+            onTap: _onNavTap,
+            selectedItemColor: Colors.transparent, // 개별 색상 사용
+            unselectedItemColor: Colors.transparent, // 개별 색상 사용
+            iconSize: 24,
+            items: [
+              BottomNavigationBarItem(
+                icon: Icon(
+                  CupertinoIcons.quote_bubble,
+                  color: _currentIndex == 0 ? activeGreen : inactiveGrey,
+                ),
+                label: '',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(
+                  Icons.search,
+                  color: _currentIndex == 1 ? activeGreen : inactiveGrey,
+                ),
+                label: '',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(
+                  Icons.favorite_border,
+                  color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
+                ),
+                activeIcon: const Icon(Icons.favorite, color: bookmarkPink),
+                label: '',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(
+                  Icons.person,
+                  color: _currentIndex == 3 ? activeGreen : inactiveGrey,
+                ),
+                label: '',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(
-              Icons.search,
-              color: _currentIndex == 1 ? activeGreen : inactiveGrey,
-            ),
-            label: '',
+        ),
+        if (_shouldShowTutorial)
+          TutorialOverlay(
+            section: _currentTutorialSection,
+            stepIndex: _tutorialStepIndex,
+            onNext: _advanceTutorial,
+            onSkip: () => _completeTutorial(_currentTutorialSection),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(
-              Icons.favorite_border,
-              color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
-            ),
-            activeIcon: const Icon(
-              Icons.favorite,
-              color: bookmarkPink,
-            ),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(
-              Icons.person,
-              color: _currentIndex == 3 ? activeGreen : inactiveGrey,
-            ),
-            label: '',
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
