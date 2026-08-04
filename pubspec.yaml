@@ -61,6 +61,15 @@ dependencies:
   # Image cropper
   image_cropper: ^8.0.2
 
+  # Open the installed app's store review page
+  in_app_review: ^2.0.12
+
+  # Daily local quote notifications and persisted notification settings
+  flutter_local_notifications: ^19.5.0
+  flutter_timezone: ^4.1.1
+  timezone: ^0.10.1
+  shared_preferences: ^2.5.3
+
   # Google AdMob
   google_mobile_ads: ^5.3.0
 

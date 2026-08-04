@@ -12,6 +12,7 @@ import 'like_page.dart';
 import 'setting_page.dart';
 import 'tutorial.dart';
 import 'installation_identity.dart';
+import 'notification_service.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -67,6 +68,12 @@ class WidgetDataManager {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await NotificationService.instance.initialize();
+  } catch (error) {
+    debugPrint('알림 초기화 실패: $error');
+  }
 
   try {
     // 환경에 따른 .env 파일 로드
@@ -126,6 +133,14 @@ void main() async {
     // 위젯 데이터 초기화
     print('✅ 위젯 데이터 초기화 시작...');
     await WidgetDataManager.initializeWidgetData();
+
+    try {
+      await NotificationService.instance.refreshIfEnabled(
+        Supabase.instance.client,
+      );
+    } catch (error) {
+      debugPrint('명언 알림 갱신 실패: $error');
+    }
     print('✅ 위젯 데이터 초기화 완료');
   } catch (e, stackTrace) {
     print('❌❌❌ 초기화 오류 발생 ❌❌❌');
