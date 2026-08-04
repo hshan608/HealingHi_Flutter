@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:like_button/like_button.dart';
@@ -360,6 +361,96 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  void _selectSearchType(String type) {
+    if (_searchType == type) return;
+    setState(() => _searchType = type);
+    _performSearch(_searchController.text);
+  }
+
+  Widget _buildSearchTabLabel({required String type, required String label}) {
+    final isSelected = _searchType == type;
+
+    return Expanded(
+      child: Semantics(
+        selected: isSelected,
+        button: true,
+        label: '$label 검색',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _selectSearchType(type),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                color: isSelected
+                    ? const Color(0xFF81A684)
+                    : const Color(0xFF9BA09C),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchTabs() {
+    const tabGap = SizedBox(width: 25);
+    const selectedColor = Color(0xFF81A684);
+    const unselectedColor = Color(0xFFE5E5E5);
+
+    return SizedBox(
+      height: 50,
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              key: TutorialTargets.searchTabs,
+              children: [
+                _buildSearchTabLabel(type: 'author', label: '저자'),
+                tabGap,
+                _buildSearchTabLabel(type: 'content', label: '본문'),
+                tabGap,
+                _buildSearchTabLabel(type: 'subject', label: '주제'),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 4,
+            child: Row(
+              children: [
+                Expanded(
+                  child: ColoredBox(
+                    color: _searchType == 'author'
+                        ? selectedColor
+                        : unselectedColor,
+                  ),
+                ),
+                tabGap,
+                Expanded(
+                  child: ColoredBox(
+                    color: _searchType == 'content'
+                        ? selectedColor
+                        : unselectedColor,
+                  ),
+                ),
+                tabGap,
+                Expanded(
+                  child: ColoredBox(
+                    color: _searchType == 'subject'
+                        ? selectedColor
+                        : unselectedColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -369,223 +460,104 @@ class _SearchScreenState extends State<SearchScreen> {
         backgroundColor: const Color(0xFFDDE7DE),
         body: SafeArea(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 상단 영역 (패딩 있음)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 상단 제목
-                    const Row(
-                      children: [
-                        Text(
-                          '검색',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
+              const SizedBox(height: 8),
+              const SizedBox(
+                height: 43,
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    '지금 필요한 문장을 찾아보세요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF595959),
                     ),
-                    const SizedBox(height: 12),
-
-                    // 검색바 섹션
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 8.0),
-                      height: 56.0,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12.0),
-                        border: Border.all(
-                          color: Colors.grey.withOpacity(0.2),
-                          width: 1.0,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 1,
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        key: TutorialTargets.searchField,
-                        controller: _searchController,
-                        focusNode: _searchFocusNode,
-                        onChanged: _performSearch,
-                        keyboardType: TextInputType.text,
-                        textInputAction: TextInputAction.search,
-                        enableInteractiveSelection: true,
-                        onSubmitted: _performSearch,
-                        onTap: () {
-                          SystemChannels.textInput.invokeMethod(
-                            'TextInput.show',
-                          );
-                        },
-                        decoration: InputDecoration(
-                          hintText: '입력',
-                          hintStyle: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 14,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search,
-                            color: Colors.grey,
-                            size: 20,
-                          ),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    _performSearch('');
-                                  },
-                                  icon: const Icon(
-                                    Icons.clear,
-                                    color: Colors.grey,
-                                    size: 20,
-                                  ),
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 16.0,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // 검색 타입 선택 탭
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 8.0),
-                      child: Row(
-                        key: TutorialTargets.searchTabs,
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _searchType = 'author';
-                                });
-                                _performSearch(_searchController.text);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12.0,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: _searchType == 'author'
-                                          ? Colors.black87
-                                          : Colors.transparent,
-                                      width: 2.0,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  '저자',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: _searchType == 'author'
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: _searchType == 'author'
-                                        ? Colors.black87
-                                        : Colors.grey,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _searchType = 'content';
-                                });
-                                _performSearch(_searchController.text);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12.0,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: _searchType == 'content'
-                                          ? Colors.black87
-                                          : Colors.transparent,
-                                      width: 2.0,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  '본문',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: _searchType == 'content'
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: _searchType == 'content'
-                                        ? Colors.black87
-                                        : Colors.grey,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _searchType = 'subject';
-                                });
-                                _performSearch(_searchController.text);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12.0,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(
-                                      color: _searchType == 'subject'
-                                          ? Colors.black87
-                                          : Colors.transparent,
-                                      width: 2.0,
-                                    ),
-                                  ),
-                                ),
-                                child: Text(
-                                  '주제',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: _searchType == 'subject'
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: _searchType == 'subject'
-                                        ? Colors.black87
-                                        : Colors.grey,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              // 검색 결과 또는 안내 메시지 (패딩 없음, 전체 너비)
+              const SizedBox(height: 29),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 25),
+                child: Container(
+                  height: 63,
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(color: const Color(0xFFEFEFEF)),
+                  ),
+                  child: Row(
+                    children: [
+                      SvgPicture.asset(
+                        'assets/icon/figma_search.svg',
+                        width: 33,
+                        height: 33,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(width: 25),
+                      Expanded(
+                        child: TextField(
+                          key: TutorialTargets.searchField,
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          onChanged: _performSearch,
+                          keyboardType: TextInputType.text,
+                          textInputAction: TextInputAction.search,
+                          enableInteractiveSelection: true,
+                          onSubmitted: _performSearch,
+                          onTap: () {
+                            SystemChannels.textInput.invokeMethod(
+                              'TextInput.show',
+                            );
+                          },
+                          textAlign: _searchController.text.isEmpty
+                              ? TextAlign.left
+                              : TextAlign.center,
+                          textAlignVertical: TextAlignVertical.center,
+                          cursorColor: const Color(0xFF81A684),
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF414141),
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: '검색어를 입력해 주세요.',
+                            hintStyle: const TextStyle(
+                              color: Color(0xFF9E9E9E),
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      _performSearch('');
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: Color(0xFF9E9E9E),
+                                      size: 20,
+                                    ),
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 29),
+              _buildSearchTabs(),
               Expanded(
                 child: Container(
                   color: Colors.white,

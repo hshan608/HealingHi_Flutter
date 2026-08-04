@@ -16,10 +16,24 @@ import 'tutorial.dart';
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
 const _appMutedGreen = Color(0xFF81A684);
+const _quoteRequestShareRequirement = 30;
+
+Future<dynamic> _submitQuoteRequest({
+  required String quote,
+  required String author,
+  required String category,
+}) {
+  return supabase.rpc(
+    'submit_quote_request',
+    params: {'p_text_kr': quote, 'p_resoner_kr': author, 'p_tag_kr': category},
+  );
+}
 
 // 마이페이지 화면
 class MyPageScreen extends StatefulWidget {
-  const MyPageScreen({super.key});
+  const MyPageScreen({super.key, required this.onInterstitialRequested});
+
+  final VoidCallback onInterstitialRequested;
 
   @override
   State<MyPageScreen> createState() => _MyPageScreenState();
@@ -28,10 +42,13 @@ class MyPageScreen extends StatefulWidget {
 enum _ProfileImageAction { select, delete }
 
 class _QuoteRequestPage extends StatefulWidget {
-  const _QuoteRequestPage({required this.deviceId, required this.displayName});
+  const _QuoteRequestPage({
+    required this.displayName,
+    required this.onInterstitialRequested,
+  });
 
-  final String? deviceId;
   final String displayName;
+  final VoidCallback onInterstitialRequested;
 
   @override
   State<_QuoteRequestPage> createState() => _QuoteRequestPageState();
@@ -172,18 +189,11 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
 
     setState(() => _isSubmitting = true);
     try {
-      final insertResult = await supabase
-          .from('request_quotes')
-          .insert({
-            'text_kr': _quoteController.text.trim(),
-            'resoner_kr': _authorController.text.trim(),
-            'tag_kr': _selectedCategory,
-            'device_id': widget.deviceId,
-          })
-          .select('id')
-          .single();
-
-      final requestQuoteId = insertResult['id'];
+      final requestQuoteId = await _submitQuoteRequest(
+        quote: _quoteController.text.trim(),
+        author: _authorController.text.trim(),
+        category: _selectedCategory!,
+      );
       if (_selectedImage != null) {
         try {
           final bytes = await File(_selectedImage!.path).readAsBytes();
@@ -215,11 +225,19 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
 
       if (!mounted) return;
       setState(() => _isSubmitted = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onInterstitialRequested();
+      });
     } catch (error) {
       if (!mounted) return;
       debugPrint('명언 신청 실패: $error');
+      final shareRequirementNotMet = error.toString().contains(
+        '30 shares are required',
+      );
       setState(() {
-        _submitError = '신청을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
+        _submitError = shareRequirementNotMet
+            ? '명언을 신청하려면 공유 30회를 완료해 주세요.'
+            : '신청을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
       });
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -691,7 +709,8 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  '관리자 검토 후 등록됩니다.',
+                  '관리자 검토 후 등록됩니다.\n신청용 공유 카운트만 0회로 초기화되며 공유 등급은 유지됩니다.',
+                  textAlign: TextAlign.center,
                   style: TextStyle(color: Color(0xFF777777), fontSize: 15),
                 ),
                 const SizedBox(height: 28),
@@ -735,6 +754,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   String _name = '';
   String _selectedLanguage = 'kor'; // 기본값: 한국어
   int _shareCount = 0;
+  int _quoteRequestShareCount = 0;
   String? _deviceId;
   bool _isLoading = true;
   bool _isEditingName = false;
@@ -817,12 +837,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
       // 공유 카운트 로드 (device_id 기반 - users 행 없이도 동작)
       final shareData = await supabase
           .from('device_shares')
-          .select('share_count')
+          .select('share_count, quote_request_share_count')
           .eq('device_id', _deviceId!)
           .maybeSingle();
 
       final shareCount = shareData != null
           ? (shareData['share_count'] ?? 0) as int
+          : 0;
+      final quoteRequestShareCount = shareData != null
+          ? (shareData['quote_request_share_count'] ?? 0) as int
           : 0;
 
       final response = await supabase
@@ -842,6 +865,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           _profileImageUrl = response['profile_image_url'] ?? '';
           _selectedLanguage = response['language'] ?? 'kor';
           _shareCount = shareCount;
+          _quoteRequestShareCount = quoteRequestShareCount;
           _nameController.text = displayName;
           _isLoading = false;
         });
@@ -853,6 +877,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           _nameController.text = displayName;
           _selectedLanguage = 'kor';
           _shareCount = shareCount;
+          _quoteRequestShareCount = quoteRequestShareCount;
           _isLoading = false;
         });
       }
@@ -1406,138 +1431,275 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Future<TimeOfDay?> _showNotificationTimePicker() async {
-    var selectedHour = _notificationTime.hour;
+    var selectedPeriod = _notificationTime.hour >= 12 ? 1 : 0;
+    var selectedHour = _notificationTime.hour % 12;
+    if (selectedHour == 0) selectedHour = 12;
     var selectedMinute = _notificationTime.minute;
+    final periodController = FixedExtentScrollController(
+      initialItem: selectedPeriod,
+    );
     final hourController = FixedExtentScrollController(
-      initialItem: selectedHour,
+      initialItem: 1200 + selectedHour - 1,
     );
     final minuteController = FixedExtentScrollController(
-      initialItem: selectedMinute,
+      initialItem: 6000 + selectedMinute,
     );
 
-    final result = await showModalBottomSheet<TimeOfDay>(
+    Widget selectionLine({bool fullWidth = false}) {
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: FractionallySizedBox(
+          widthFactor: fullWidth ? 1 : 0.58,
+          child: const DecoratedBox(
+            decoration: BoxDecoration(color: _appMutedGreen),
+            child: SizedBox(height: 2),
+          ),
+        ),
+      );
+    }
+
+    TextStyle pickerTextStyle(bool isSelected) {
+      return TextStyle(
+        color: isSelected ? _appMutedGreen : const Color(0xFFAAAAAA),
+        fontSize: 18,
+        fontWeight: FontWeight.w500,
+      );
+    }
+
+    final result = await showDialog<TimeOfDay>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) {
+      barrierColor: const Color(0x9F000000),
+      builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return SafeArea(
-              top: false,
-              child: Container(
-                height: 330,
-                padding: const EdgeInsets.only(top: 8),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF9F9F9),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFD9D9D9),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 58,
-                      child: Row(
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(sheetContext),
-                            child: const Text(
-                              '취소',
-                              style: TextStyle(color: Color(0xFF777777)),
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Container(
+                  height: 346,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6F4F1),
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 125,
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 4),
+                            Image.asset(
+                              'assets/alarm_bell.png',
+                              width: 30,
+                              height: 30,
                             ),
-                          ),
-                          const Expanded(
-                            child: Text(
-                              '알림 시각 설정',
+                            const SizedBox(height: 15),
+                            const Text(
+                              '알림 시간 설정',
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(
-                              sheetContext,
-                              TimeOfDay(
-                                hour: selectedHour,
-                                minute: selectedMinute,
-                              ),
-                            ),
-                            child: const Text(
-                              '완료',
-                              style: TextStyle(
-                                color: _appMutedGreen,
+                                color: Colors.black,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w700,
+                                height: 1.2,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 96,
-                            child: CupertinoPicker.builder(
-                              scrollController: hourController,
-                              itemExtent: 44,
-                              diameterRatio: 1.4,
-                              useMagnifier: true,
-                              magnification: 1.08,
-                              childCount: 24,
-                              onSelectedItemChanged: (value) =>
-                                  setModalState(() => selectedHour = value),
-                              itemBuilder: (_, index) => Center(
-                                child: Text(
-                                  index.toString().padLeft(2, '0'),
-                                  style: const TextStyle(fontSize: 22),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Text(
-                              ':',
+                            const SizedBox(height: 20),
+                            const Text(
+                              '각 항목을 위아래로 움직여 시간을 설정해 주세요.',
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w300,
+                                height: 1.2,
                               ),
                             ),
-                          ),
-                          SizedBox(
-                            width: 96,
-                            child: CupertinoPicker.builder(
-                              scrollController: minuteController,
-                              itemExtent: 44,
-                              diameterRatio: 1.4,
-                              useMagnifier: true,
-                              magnification: 1.08,
-                              childCount: 60,
-                              onSelectedItemChanged: (value) =>
-                                  setModalState(() => selectedMinute = value),
-                              itemBuilder: (_, index) => Center(
-                                child: Text(
-                                  index.toString().padLeft(2, '0'),
-                                  style: const TextStyle(fontSize: 22),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        height: 100,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 5),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: CupertinoPicker.builder(
+                                  scrollController: periodController,
+                                  itemExtent: 30,
+                                  diameterRatio: 100,
+                                  squeeze: 1,
+                                  selectionOverlay: selectionLine(
+                                    fullWidth: true,
+                                  ),
+                                  childCount: 2,
+                                  onSelectedItemChanged: (value) =>
+                                      setModalState(
+                                        () => selectedPeriod = value,
+                                      ),
+                                  itemBuilder: (_, index) => Center(
+                                    child: Text(
+                                      index == 0 ? '오전' : '오후',
+                                      style: pickerTextStyle(
+                                        selectedPeriod == index,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: CupertinoPicker.builder(
+                                        scrollController: hourController,
+                                        itemExtent: 30,
+                                        diameterRatio: 100,
+                                        squeeze: 1,
+                                        selectionOverlay: selectionLine(),
+                                        onSelectedItemChanged: (value) =>
+                                            setModalState(
+                                              () =>
+                                                  selectedHour = value % 12 + 1,
+                                            ),
+                                        itemBuilder: (_, index) => Center(
+                                          child: Text(
+                                            '${index % 12 + 1}',
+                                            style: pickerTextStyle(
+                                              selectedHour == index % 12 + 1,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+                                    const Expanded(
+                                      child: Center(
+                                        child: Text(
+                                          '시',
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: CupertinoPicker.builder(
+                                        scrollController: minuteController,
+                                        itemExtent: 30,
+                                        diameterRatio: 100,
+                                        squeeze: 1,
+                                        selectionOverlay: selectionLine(),
+                                        onSelectedItemChanged: (value) =>
+                                            setModalState(
+                                              () => selectedMinute = value % 60,
+                                            ),
+                                        itemBuilder: (_, index) => Center(
+                                          child: Text(
+                                            '${index % 60}',
+                                            style: pickerTextStyle(
+                                              selectedMinute == index % 60,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+                                    const Expanded(
+                                      child: Center(
+                                        child: Text(
+                                          '분',
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                  ],
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        height: 41,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () {
+                                    final hour = selectedPeriod == 0
+                                        ? selectedHour % 12
+                                        : (selectedHour % 12) + 12;
+                                    Navigator.pop(
+                                      dialogContext,
+                                      TimeOfDay(
+                                        hour: hour,
+                                        minute: selectedMinute,
+                                      ),
+                                    );
+                                  },
+                                  child: const Center(
+                                    child: Text(
+                                      '확인',
+                                      style: TextStyle(
+                                        color: _appMutedGreen,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => Navigator.pop(dialogContext),
+                                  child: const Center(
+                                    child: Text(
+                                      '취소',
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -1546,6 +1708,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       },
     );
 
+    periodController.dispose();
     hourController.dispose();
     minuteController.dispose();
     return result;
@@ -1721,9 +1884,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                   child: _buildAchievementSection(),
                 ),
 
-                // 공유 5회 이상이면 명언 신청, 아니면 앱 리뷰 작성
+                // 명언 신청용 공유 카운트가 30회 이상이면 신청 가능
                 const SizedBox(height: 24),
-                if (_shareCount >= 5)
+                if (_quoteRequestShareCount >= _quoteRequestShareRequirement)
                   _buildQuoteRequestButton()
                 else
                   _buildAppReviewButton(),
@@ -2183,18 +2346,19 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
+                        horizontal: 10,
                         vertical: 3,
                       ),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Image.asset(
                             'assets/rank_icon.png',
-                            width: 73,
-                            height: 73,
+                            width: 50,
+                            height: 50,
                             fit: BoxFit.contain,
                           ),
-                          const SizedBox(width: 9),
+                          const SizedBox(width: 8),
                           const Text(
                             '공유 랭킹',
                             style: TextStyle(
@@ -2203,16 +2367,23 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 9),
+                          const SizedBox(width: 8),
                           const Expanded(
-                            child: Text(
-                              '힐링 하이를 얼마나 자주 나누었을까요?',
-                              maxLines: 2,
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w400,
+                            child: SizedBox(
+                              height: 17,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  '힐링 하이를 얼마나 자주 나누었을까요?',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -2457,18 +2628,20 @@ class _MyPageScreenState extends State<MyPageScreen> {
       width: double.infinity,
       height: 52,
       child: ElevatedButton.icon(
-        onPressed: () {
+        onPressed: () async {
           final fallbackName = _deviceId != null
               ? generateNickname(_deviceId!)
               : '';
-          Navigator.of(context).push(
+          await Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => _QuoteRequestPage(
-                deviceId: _deviceId,
                 displayName: _name.isNotEmpty ? _name : fallbackName,
+                onInterstitialRequested: widget.onInterstitialRequested,
               ),
             ),
           );
+          if (!mounted) return;
+          await _loadUserData();
         },
         icon: const Icon(Icons.edit_note, size: 22),
         label: const Text(
@@ -2998,18 +3171,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               return;
                             }
                             try {
-                              final insertResult = await supabase
-                                  .from('request_quotes')
-                                  .insert({
-                                    'text_kr': quoteController.text.trim(),
-                                    'resoner_kr': authorController.text.trim(),
-                                    'tag_kr': selectedCategory,
-                                    'device_id': _deviceId,
-                                  })
-                                  .select('id')
-                                  .single();
-
-                              final requestQuoteId = insertResult['id'];
+                              final requestQuoteId = await _submitQuoteRequest(
+                                quote: quoteController.text.trim(),
+                                author: authorController.text.trim(),
+                                category: selectedCategory!,
+                              );
 
                               if (selectedImage != null) {
                                 try {
@@ -3051,6 +3217,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               setModalState(() {
                                 isSubmitted = true;
                               });
+                              if (mounted) {
+                                setState(() => _quoteRequestShareCount = 0);
+                              }
                             } catch (e) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(

@@ -65,7 +65,12 @@ class NotificationService {
       tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
     }
 
-    const androidSettings = AndroidInitializationSettings('launcher_icon');
+    // flutter_local_notifications resolves the default icon from Android's
+    // drawable resources. The app launcher icon lives under mipmap, so use
+    // the existing drawable foreground asset for notifications instead.
+    const androidSettings = AndroidInitializationSettings(
+      'ic_launcher_foreground',
+    );
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,

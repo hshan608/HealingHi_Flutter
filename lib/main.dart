@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:home_widget/home_widget.dart';
@@ -175,25 +175,33 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  static const int _navSwitchFrequency = 10;
+
   int _currentIndex = 0;
   int _navSwitchCount = 0; // 탭 전환 횟수
   InterstitialAd? _interstitialAd;
+  bool _isInterstitialLoading = false;
+  bool _isInterstitialShowing = false;
+  bool _hasPendingInterstitialRequest = false;
+  bool _didEnterBackground = false;
   late final TutorialProgressStore _tutorialStore;
   Map<String, bool> _tutorialProgress = <String, bool>{};
   bool _tutorialStateLoaded = false;
   int _tutorialStepIndex = 0;
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const SearchScreen(),
-    const BookmarkScreen(),
-    const MyPageScreen(),
-  ];
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _screens = [
+      HomeScreen(onInterstitialRequested: _requestInterstitial),
+      const SearchScreen(),
+      const BookmarkScreen(),
+      MyPageScreen(onInterstitialRequested: _requestInterstitial),
+    ];
     _tutorialStore = TutorialProgressStore(supabase);
     _loadTutorialProgress();
     _loadInterstitialAd();
@@ -201,33 +209,91 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _interstitialAd?.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // 다른 앱으로 이동해 실제로 백그라운드에 들어간 경우만 기록한다.
+    // 전면 광고 자체가 만드는 생명주기 변경은 복귀 광고로 계산하지 않는다.
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        !_isInterstitialShowing) {
+      _didEnterBackground = true;
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed && _didEnterBackground) {
+      _didEnterBackground = false;
+      _requestInterstitial();
+    }
+  }
+
   void _loadInterstitialAd() {
+    if (_isInterstitialLoading || _interstitialAd != null) return;
+    _isInterstitialLoading = true;
+
     InterstitialAd.load(
       adUnitId: AdHelper.interstitialAdUnitId,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
+          _isInterstitialLoading = false;
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
               ad.dispose();
+              _isInterstitialShowing = false;
               _interstitialAd = null;
               _loadInterstitialAd(); // 다음 광고 미리 로드
             },
             onAdFailedToShowFullScreenContent: (ad, error) {
               ad.dispose();
+              _isInterstitialShowing = false;
               _interstitialAd = null;
               _loadInterstitialAd();
             },
           );
-          if (mounted) setState(() => _interstitialAd = ad);
+          _interstitialAd = ad;
+          _tryShowRequestedInterstitial();
         },
-        onAdFailedToLoad: (_) => _interstitialAd = null,
+        onAdFailedToLoad: (_) {
+          _isInterstitialLoading = false;
+          _interstitialAd = null;
+          Future<void>.delayed(const Duration(seconds: 10), () {
+            if (mounted) _loadInterstitialAd();
+          });
+        },
       ),
     );
+  }
+
+  void _requestInterstitial() {
+    if (!mounted) return;
+    _hasPendingInterstitialRequest = true;
+    _tryShowRequestedInterstitial();
+  }
+
+  void _tryShowRequestedInterstitial() {
+    if (!_hasPendingInterstitialRequest || _isInterstitialShowing) return;
+
+    final ad = _interstitialAd;
+    if (ad == null) {
+      _loadInterstitialAd();
+      return;
+    }
+
+    _hasPendingInterstitialRequest = false;
+    _isInterstitialShowing = true;
+    _interstitialAd = null;
+    ad.show();
   }
 
   void _onNavTap(int index) {
@@ -238,9 +304,8 @@ class _MainScreenState extends State<MainScreen> {
       _tutorialStepIndex = 0;
     });
 
-    if (_navSwitchCount % 5 == 0 && _interstitialAd != null) {
-      _interstitialAd!.show();
-      _interstitialAd = null;
+    if (_navSwitchCount % _navSwitchFrequency == 0) {
+      _requestInterstitial();
     }
   }
 
@@ -306,52 +371,50 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     const activeGreen = Color(0xFF81A684); // 활성화 시 진한 녹색
     const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
-    const bookmarkPink = Color(0xFFFF8787); // 보관함 하트 색상
 
     return Stack(
       children: [
         Scaffold(
           body: _screens[_currentIndex],
-          bottomNavigationBar: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
-            currentIndex: _currentIndex,
-            onTap: _onNavTap,
-            selectedItemColor: Colors.transparent, // 개별 색상 사용
-            unselectedItemColor: Colors.transparent, // 개별 색상 사용
-            iconSize: 24,
-            items: [
-              BottomNavigationBarItem(
-                icon: Icon(
-                  CupertinoIcons.quote_bubble,
-                  color: _currentIndex == 0 ? activeGreen : inactiveGrey,
+          bottomNavigationBar: Container(
+            height: 80,
+            color: const Color(0xFFF8F9FE),
+            child: Row(
+              children: [
+                _buildNavigationItem(
+                  index: 0,
+                  label: '명언',
+                  iconAsset: 'assets/icon/figma_quote.svg',
+                  iconGap: 6,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
                 ),
-                label: '',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(
-                  Icons.search,
-                  color: _currentIndex == 1 ? activeGreen : inactiveGrey,
+                _buildNavigationItem(
+                  index: 1,
+                  label: '검색',
+                  icon: Icons.search_rounded,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
                 ),
-                label: '',
-              ),
-              BottomNavigationBarItem(
-                icon: KeyedSubtree(
+                _buildNavigationItem(
+                  index: 2,
+                  label: '보관함',
+                  icon: _currentIndex == 2
+                      ? Icons.favorite
+                      : Icons.favorite_border,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
                   key: TutorialTargets.bookmarkTab,
-                  child: Icon(
-                    _currentIndex == 2 ? Icons.favorite : Icons.favorite_border,
-                    color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
-                  ),
                 ),
-                label: '',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(
-                  Icons.person,
-                  color: _currentIndex == 3 ? activeGreen : inactiveGrey,
+                _buildNavigationItem(
+                  index: 3,
+                  label: '설정',
+                  icon: Icons.settings_outlined,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
                 ),
-                label: '',
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         if (_shouldShowTutorial)
@@ -362,6 +425,57 @@ class _MainScreenState extends State<MainScreen> {
             onSkip: () => _completeTutorial(_currentTutorialSection),
           ),
       ],
+    );
+  }
+
+  Widget _buildNavigationItem({
+    required int index,
+    required String label,
+    IconData? icon,
+    String? iconAsset,
+    double iconGap = 5,
+    required Color activeColor,
+    required Color inactiveColor,
+    Key? key,
+  }) {
+    assert(icon != null || iconAsset != null);
+    final isSelected = _currentIndex == index;
+    final color = isSelected ? activeColor : inactiveColor;
+
+    return Expanded(
+      key: key,
+      child: Semantics(
+        selected: isSelected,
+        button: true,
+        label: label,
+        child: InkWell(
+          onTap: () => _onNavTap(index),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (iconAsset != null)
+                SvgPicture.asset(
+                  iconAsset,
+                  width: 25,
+                  height: 25,
+                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                  fit: BoxFit.contain,
+                )
+              else
+                Icon(icon, size: index == 3 ? 25 : 24, color: color),
+              SizedBox(height: iconGap),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
