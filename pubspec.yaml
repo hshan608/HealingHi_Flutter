@@ -34,6 +34,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flutter_svg: ^2.2.3
   share_plus: ^10.1.2
   
   # Supabase packages
@@ -44,6 +45,10 @@ dependencies:
   
   # Device info
   device_info_plus: ^10.1.2
+
+  # Per-installation identity stored in the platform secure store
+  flutter_secure_storage: ^10.3.1
+  uuid: ^4.6.0
   
   # Image picker
   image_picker: ^1.1.2
@@ -56,6 +61,15 @@ dependencies:
 
   # Image cropper
   image_cropper: ^8.0.2
+
+  # Open the installed app's store review page
+  in_app_review: ^2.0.12
+
+  # Daily local quote notifications and persisted notification settings
+  flutter_local_notifications: ^19.5.0
+  flutter_timezone: ^4.1.1
+  timezone: ^0.10.1
+  shared_preferences: ^2.5.3
 
   # Google AdMob
   google_mobile_ads: ^5.3.0
@@ -81,23 +95,23 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/new_ico.png"
   min_sdk_android: 21 # android min sdk min:16, default 21
   # Android Adaptive Icon 설정 (아이콘이 잘리지 않도록)
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  adaptive_icon_foreground: "assets/new_ico.png"
   web:
     generate: true
-    image_path: "assets/icon/app_icon.png"
+    image_path: "assets/new_ico.png"
     background_color: "#hexcode"
     theme_color: "#hexcode"
   windows:
     generate: true
-    image_path: "assets/icon/app_icon.png"
+    image_path: "assets/new_ico.png"
     icon_size: 48 # min:48, max:256, default: 48
   macos:
     generate: true
-    image_path: "assets/icon/app_icon.png"
+    image_path: "assets/new_ico.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -115,6 +129,7 @@ flutter:
     - .env.development
     - .env.production
     - assets/
+    - assets/icon/
     - assets/resoner/
 
   # An image asset can refer to one or more resolution-specific "variants", see

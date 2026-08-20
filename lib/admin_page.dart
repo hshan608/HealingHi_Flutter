@@ -11,8 +11,8 @@ class AdminPage extends StatefulWidget {
 }
 
 class _AdminPageState extends State<AdminPage> {
-  // Static: survives widget rebuilds, resets when app process is killed
-  static bool _isAuthenticated = false;
+  // 메모리에만 유지되며 앱 프로세스가 종료되면 다시 인증해야 합니다.
+  static String? _authenticatedPassword;
 
   final _passwordController = TextEditingController();
   bool _passwordObscured = true;
@@ -23,12 +23,10 @@ class _AdminPageState extends State<AdminPage> {
   Map<String, String?> _quoteImageUrls = {}; // request_quote id -> image_url
   bool _isLoading = false;
 
-  static const String _adminPassword = '03220608';
-
   @override
   void initState() {
     super.initState();
-    if (_isAuthenticated) {
+    if (_authenticatedPassword != null) {
       _loadPendingQuotes();
     }
   }
@@ -40,55 +38,26 @@ class _AdminPageState extends State<AdminPage> {
   }
 
   Future<void> _loadPendingQuotes() async {
+    final password = _authenticatedPassword;
+    if (password == null) return;
     setState(() => _isLoading = true);
     try {
-      final response = await supabase
-          .from('request_quotes')
-          .select()
-          .isFilter('is_accept', null)
-          .order('created_at', ascending: true);
-
-      final quotes = List<Map<String, dynamic>>.from(response);
-
-      // device_id 목록 수집 후 users 테이블에서 user_id 조회
-      final deviceIds = quotes
-          .map((q) => q['device_id']?.toString())
-          .where((id) => id != null && id.isNotEmpty)
-          .toSet()
-          .cast<String>()
-          .toList();
-
-      final Map<String, String> nameMap = {};
-      if (deviceIds.isNotEmpty) {
-        final users = await supabase
-            .from('users')
-            .select('device_id, user_id')
-            .inFilter('device_id', deviceIds);
-
-        for (final user in users as List) {
-          final did = user['device_id']?.toString();
-          final uid = user['user_id']?.toString();
-          if (did != null && uid != null) {
-            nameMap[did] = uid;
-          }
+      final response = await supabase.rpc(
+        'admin_get_pending_quotes',
+        params: {'p_password': password},
+      );
+      final quotes = List<Map<String, dynamic>>.from(response as List);
+      final nameMap = <String, String>{};
+      final imageMap = <String, String?>{};
+      for (final quote in quotes) {
+        final deviceId = quote['device_id']?.toString();
+        final applicantName = quote['applicant_name']?.toString();
+        if (deviceId != null && applicantName != null) {
+          nameMap[deviceId] = applicantName;
         }
-      }
-
-      // request_quote_images 테이블에서 이미지 URL 조회
-      final Map<String, String?> imageMap = {};
-      if (quotes.isNotEmpty) {
-        final quoteIds = quotes.map((q) => q['id']).toList();
-        final images = await supabase
-            .from('request_quote_images')
-            .select('request_quote_idx, image_url')
-            .inFilter('request_quote_idx', quoteIds);
-
-        for (final img in images as List) {
-          final idx = img['request_quote_idx']?.toString();
-          final url = img['image_url']?.toString();
-          if (idx != null && url != null) {
-            imageMap[idx] = url;
-          }
+        final quoteId = quote['id']?.toString();
+        if (quoteId != null) {
+          imageMap[quoteId] = quote['image_url']?.toString();
         }
       }
 
@@ -110,14 +79,27 @@ class _AdminPageState extends State<AdminPage> {
     }
   }
 
-  void _checkPassword() {
-    if (_passwordController.text == _adminPassword) {
+  Future<void> _checkPassword() async {
+    final password = _passwordController.text;
+    try {
+      final isValid = await supabase.rpc(
+        'admin_login',
+        params: {'p_password': password},
+      );
+      if (!mounted) return;
+      if (isValid == true) {
+        setState(() {
+          _authenticatedPassword = password;
+          _passwordError = false;
+        });
+        await _loadPendingQuotes();
+        return;
+      }
       setState(() {
-        _isAuthenticated = true;
-        _passwordError = false;
+        _passwordError = true;
       });
-      _loadPendingQuotes();
-    } else {
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
         _passwordError = true;
       });
@@ -126,24 +108,15 @@ class _AdminPageState extends State<AdminPage> {
 
   Future<void> _approveQuote(Map<String, dynamic> quote) async {
     final rowId = quote['id'].toString();
-    final newQuoteId = 'req_$rowId';
+    final password = _authenticatedPassword;
+    if (password == null) return;
 
     try {
-      await supabase.from('quotes').insert({
-        'id': newQuoteId,
-        'text_kr': quote['text_kr'],
-        'text_eng': quote['text_eng'],
-        'resoner_kr': quote['resoner_kr'],
-        'resoner_eng': quote['resoner_eng'],
-        'tag_kr': quote['tag_kr'],
-        'tag_eng': quote['tag_eng'],
-        'imagefile': quote['imagefile'],
-      });
-
-      await supabase
-          .from('request_quotes')
-          .update({'is_accept': 1})
-          .eq('id', int.parse(rowId));
+      final approved = await supabase.rpc(
+        'admin_approve_quote',
+        params: {'p_password': password, 'p_request_id': int.parse(rowId)},
+      );
+      if (approved != true) throw Exception('이미 처리되었거나 존재하지 않는 신청입니다.');
 
       if (mounted) {
         setState(() {
@@ -167,20 +140,23 @@ class _AdminPageState extends State<AdminPage> {
 
   Future<void> _rejectQuote(Map<String, dynamic> quote) async {
     final rowId = quote['id'].toString();
+    final password = _authenticatedPassword;
+    if (password == null) return;
 
     try {
-      await supabase
-          .from('request_quotes')
-          .update({'is_accept': 0})
-          .eq('id', int.parse(rowId));
+      final rejected = await supabase.rpc(
+        'admin_reject_quote',
+        params: {'p_password': password, 'p_request_id': int.parse(rowId)},
+      );
+      if (rejected != true) throw Exception('이미 처리되었거나 존재하지 않는 신청입니다.');
 
       if (mounted) {
         setState(() {
           _pendingQuotes.removeWhere((q) => q['id'].toString() == rowId);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('거절되었습니다')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('거절되었습니다')));
       }
     } catch (e) {
       if (mounted) {
@@ -203,7 +179,7 @@ class _AdminPageState extends State<AdminPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          _isAuthenticated ? '명언 신청 관리' : '관리자 인증',
+          _authenticatedPassword != null ? '명언 신청 관리' : '관리자 인증',
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -211,7 +187,9 @@ class _AdminPageState extends State<AdminPage> {
           ),
         ),
       ),
-      body: _isAuthenticated ? _buildAdminList() : _buildPasswordGate(),
+      body: _authenticatedPassword != null
+          ? _buildAdminList()
+          : _buildPasswordGate(),
     );
   }
 
@@ -332,8 +310,10 @@ class _AdminPageState extends State<AdminPage> {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF81A684).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
@@ -386,13 +366,12 @@ class _AdminPageState extends State<AdminPage> {
                 width: double.infinity,
                 height: 200,
                 fit: BoxFit.cover,
-                loadingBuilder: (_, child, progress) =>
-                    progress == null
-                        ? child
-                        : const SizedBox(
-                            height: 200,
-                            child: Center(child: CircularProgressIndicator()),
-                          ),
+                loadingBuilder: (_, child, progress) => progress == null
+                    ? child
+                    : const SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
                 errorBuilder: (_, __, ___) => Text(
                   '이미지를 불러올 수 없습니다',
                   style: TextStyle(color: Colors.grey[500], fontSize: 12),

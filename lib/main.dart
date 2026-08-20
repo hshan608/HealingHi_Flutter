@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:home_widget/home_widget.dart';
@@ -10,6 +10,9 @@ import 'ad_helper.dart';
 import 'search_page.dart';
 import 'like_page.dart';
 import 'setting_page.dart';
+import 'tutorial.dart';
+import 'installation_identity.dart';
+import 'notification_service.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -50,15 +53,10 @@ class WidgetDataManager {
       }).toList();
 
       // SharedPreferences에 저장
-      await HomeWidget.saveWidgetData<String>(
-        'quote_data',
-        jsonEncode(quotes),
-      );
+      await HomeWidget.saveWidgetData<String>('quote_data', jsonEncode(quotes));
 
       // 위젯 업데이트 요청
-      await HomeWidget.updateWidget(
-        androidName: 'QuoteWidgetProvider',
-      );
+      await HomeWidget.updateWidget(androidName: 'QuoteWidgetProvider');
 
       print('위젯 데이터 업데이트 완료: ${quotes.length}개 명언');
       print('저장된 데이터 샘플: ${quotes.first}');
@@ -72,10 +70,19 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
+    await NotificationService.instance.initialize();
+  } catch (error) {
+    debugPrint('알림 초기화 실패: $error');
+  }
+
+  try {
     // 환경에 따른 .env 파일 로드
     // 개발: flutter run --dart-define=FLUTTER_ENV=development (기본값)
     // 배포: flutter build apk --dart-define=FLUTTER_ENV=production
-    const environment = String.fromEnvironment('FLUTTER_ENV', defaultValue: 'development');
+    const environment = String.fromEnvironment(
+      'FLUTTER_ENV',
+      defaultValue: 'development',
+    );
     print('✅ .env.$environment 파일 로드 시작...');
     await dotenv.load(fileName: '.env.$environment');
     print('✅ .env.$environment 파일 로드 완료');
@@ -84,7 +91,9 @@ void main() async {
     final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'];
 
     print('✅ Supabase URL: $supabaseUrl');
-    print('✅ Supabase Key 존재 여부: ${supabaseKey != null && supabaseKey.isNotEmpty}');
+    print(
+      '✅ Supabase Key 존재 여부: ${supabaseKey != null && supabaseKey.isNotEmpty}',
+    );
 
     if (supabaseUrl == null || supabaseUrl.isEmpty) {
       throw Exception('❌ SUPABASE_URL이 .env.$environment 파일에 없습니다');
@@ -93,13 +102,28 @@ void main() async {
       throw Exception('❌ SUPABASE_ANON_KEY가 .env.$environment 파일에 없습니다');
     }
 
+    await InstallationIdentity.initialize();
+
     // Supabase 초기화
     print('✅ Supabase 초기화 시작...');
     await Supabase.initialize(
       url: supabaseUrl,
       anonKey: supabaseKey,
+      headers: {'x-installation-id': InstallationIdentity.id},
     );
     print('✅ Supabase 초기화 완료');
+
+    final legacyDeviceId = InstallationIdentity.legacyId;
+    if (legacyDeviceId != null && legacyDeviceId.isNotEmpty) {
+      try {
+        await Supabase.instance.client.rpc(
+          'claim_legacy_installation',
+          params: {'p_legacy_device_id': legacyDeviceId},
+        );
+      } catch (error) {
+        print('기존 사용자 데이터 이전을 건너뜁니다: $error');
+      }
+    }
 
     // AdMob 초기화
     print('✅ AdMob 초기화 시작...');
@@ -109,8 +133,15 @@ void main() async {
     // 위젯 데이터 초기화
     print('✅ 위젯 데이터 초기화 시작...');
     await WidgetDataManager.initializeWidgetData();
-    print('✅ 위젯 데이터 초기화 완료');
 
+    try {
+      await NotificationService.instance.refreshIfEnabled(
+        Supabase.instance.client,
+      );
+    } catch (error) {
+      debugPrint('명언 알림 갱신 실패: $error');
+    }
+    print('✅ 위젯 데이터 초기화 완료');
   } catch (e, stackTrace) {
     print('❌❌❌ 초기화 오류 발생 ❌❌❌');
     print('오류 메시지: $e');
@@ -144,63 +175,195 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
-  int _navSwitchCount = 0;   // 탭 전환 횟수
-  InterstitialAd? _interstitialAd;
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  static const int _navSwitchFrequency = 10;
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const SearchScreen(),
-    const BookmarkScreen(),
-    const MyPageScreen(),
-  ];
+  int _currentIndex = 0;
+  int _navSwitchCount = 0; // 탭 전환 횟수
+  InterstitialAd? _interstitialAd;
+  bool _isInterstitialLoading = false;
+  bool _isInterstitialShowing = false;
+  bool _hasPendingInterstitialRequest = false;
+  bool _didEnterBackground = false;
+  late final TutorialProgressStore _tutorialStore;
+  Map<String, bool> _tutorialProgress = <String, bool>{};
+  bool _tutorialStateLoaded = false;
+  int _tutorialStepIndex = 0;
+
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _screens = [
+      HomeScreen(onInterstitialRequested: _requestInterstitial),
+      const SearchScreen(),
+      const BookmarkScreen(),
+      MyPageScreen(onInterstitialRequested: _requestInterstitial),
+    ];
+    _tutorialStore = TutorialProgressStore(supabase);
+    _loadTutorialProgress();
     _loadInterstitialAd();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _interstitialAd?.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    // 다른 앱으로 이동해 실제로 백그라운드에 들어간 경우만 기록한다.
+    // 전면 광고 자체가 만드는 생명주기 변경은 복귀 광고로 계산하지 않는다.
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        !_isInterstitialShowing) {
+      _didEnterBackground = true;
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed && _didEnterBackground) {
+      _didEnterBackground = false;
+      _requestInterstitial();
+    }
+  }
+
   void _loadInterstitialAd() {
+    if (_isInterstitialLoading || _interstitialAd != null) return;
+    _isInterstitialLoading = true;
+
     InterstitialAd.load(
       adUnitId: AdHelper.interstitialAdUnitId,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
+          _isInterstitialLoading = false;
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
               ad.dispose();
+              _isInterstitialShowing = false;
               _interstitialAd = null;
               _loadInterstitialAd(); // 다음 광고 미리 로드
             },
             onAdFailedToShowFullScreenContent: (ad, error) {
               ad.dispose();
+              _isInterstitialShowing = false;
               _interstitialAd = null;
               _loadInterstitialAd();
             },
           );
-          if (mounted) setState(() => _interstitialAd = ad);
+          _interstitialAd = ad;
+          _tryShowRequestedInterstitial();
         },
-        onAdFailedToLoad: (_) => _interstitialAd = null,
+        onAdFailedToLoad: (_) {
+          _isInterstitialLoading = false;
+          _interstitialAd = null;
+          Future<void>.delayed(const Duration(seconds: 10), () {
+            if (mounted) _loadInterstitialAd();
+          });
+        },
       ),
     );
+  }
+
+  void _requestInterstitial() {
+    if (!mounted) return;
+    _hasPendingInterstitialRequest = true;
+    _tryShowRequestedInterstitial();
+  }
+
+  void _tryShowRequestedInterstitial() {
+    if (!_hasPendingInterstitialRequest || _isInterstitialShowing) return;
+
+    final ad = _interstitialAd;
+    if (ad == null) {
+      _loadInterstitialAd();
+      return;
+    }
+
+    _hasPendingInterstitialRequest = false;
+    _isInterstitialShowing = true;
+    _interstitialAd = null;
+    ad.show();
   }
 
   void _onNavTap(int index) {
     if (index == _currentIndex) return; // 같은 탭 재탭은 카운트 제외
     _navSwitchCount++;
-    setState(() => _currentIndex = index);
+    setState(() {
+      _currentIndex = index;
+      _tutorialStepIndex = 0;
+    });
 
-    if (_navSwitchCount % 5 == 0 && _interstitialAd != null) {
-      _interstitialAd!.show();
-      _interstitialAd = null;
+    if (_navSwitchCount % _navSwitchFrequency == 0) {
+      _requestInterstitial();
+    }
+  }
+
+  Future<void> _loadTutorialProgress() async {
+    final progress = await _tutorialStore.load();
+    if (!mounted) return;
+    setState(() {
+      _tutorialProgress = progress;
+      _tutorialStateLoaded = true;
+    });
+  }
+
+  TutorialSection get _currentTutorialSection =>
+      TutorialSection.values[_currentIndex];
+
+  bool get _shouldShowTutorial =>
+      _tutorialStateLoaded &&
+      _tutorialProgress[_currentTutorialSection.storageKey] != true;
+
+  int _tutorialStepCount(TutorialSection section) {
+    switch (section) {
+      case TutorialSection.home:
+      case TutorialSection.search:
+        return 3;
+      case TutorialSection.bookmarks:
+      case TutorialSection.profile:
+        return 2;
+    }
+  }
+
+  void _advanceTutorial() {
+    final section = _currentTutorialSection;
+    if (_tutorialStepIndex + 1 < _tutorialStepCount(section)) {
+      setState(() => _tutorialStepIndex++);
+      return;
+    }
+    _completeTutorial(section);
+  }
+
+  Future<void> _completeTutorial(TutorialSection section) async {
+    final updatedProgress = <String, bool>{
+      ..._tutorialProgress,
+      section.storageKey: true,
+    };
+    setState(() {
+      _tutorialProgress = updatedProgress;
+      _tutorialStepIndex = 0;
+    });
+
+    try {
+      await _tutorialStore.save(updatedProgress);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('튜토리얼 완료 상태를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'),
+        ),
+      );
     }
   }
 
@@ -208,51 +371,110 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     const activeGreen = Color(0xFF81A684); // 활성화 시 진한 녹색
     const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
-    const bookmarkPink = Color(0xFFFF8787); // 보관함 하트 색상
 
-    return Scaffold(
-      body: _screens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
-        onTap: _onNavTap,
-        selectedItemColor: Colors.transparent, // 개별 색상 사용
-        unselectedItemColor: Colors.transparent, // 개별 색상 사용
-        iconSize: 24,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(
-              CupertinoIcons.quote_bubble,
-              color: _currentIndex == 0 ? activeGreen : inactiveGrey,
+    return Stack(
+      children: [
+        Scaffold(
+          body: _screens[_currentIndex],
+          bottomNavigationBar: Container(
+            height: 80,
+            color: const Color(0xFFF8F9FE),
+            child: Row(
+              children: [
+                _buildNavigationItem(
+                  index: 0,
+                  label: '명언',
+                  iconAsset: 'assets/icon/figma_quote.svg',
+                  iconGap: 6,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
+                ),
+                _buildNavigationItem(
+                  index: 1,
+                  label: '검색',
+                  icon: Icons.search_rounded,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
+                ),
+                _buildNavigationItem(
+                  index: 2,
+                  label: '보관함',
+                  icon: _currentIndex == 2
+                      ? Icons.favorite
+                      : Icons.favorite_border,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
+                  key: TutorialTargets.bookmarkTab,
+                ),
+                _buildNavigationItem(
+                  index: 3,
+                  label: '설정',
+                  icon: Icons.settings_outlined,
+                  activeColor: activeGreen,
+                  inactiveColor: inactiveGrey,
+                ),
+              ],
             ),
-            label: '',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(
-              Icons.search,
-              color: _currentIndex == 1 ? activeGreen : inactiveGrey,
-            ),
-            label: '',
+        ),
+        if (_shouldShowTutorial)
+          TutorialOverlay(
+            section: _currentTutorialSection,
+            stepIndex: _tutorialStepIndex,
+            onNext: _advanceTutorial,
+            onSkip: () => _completeTutorial(_currentTutorialSection),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(
-              Icons.favorite_border,
-              color: _currentIndex == 2 ? bookmarkPink : inactiveGrey,
-            ),
-            activeIcon: const Icon(
-              Icons.favorite,
-              color: bookmarkPink,
-            ),
-            label: '',
+      ],
+    );
+  }
+
+  Widget _buildNavigationItem({
+    required int index,
+    required String label,
+    IconData? icon,
+    String? iconAsset,
+    double iconGap = 5,
+    required Color activeColor,
+    required Color inactiveColor,
+    Key? key,
+  }) {
+    assert(icon != null || iconAsset != null);
+    final isSelected = _currentIndex == index;
+    final color = isSelected ? activeColor : inactiveColor;
+
+    return Expanded(
+      key: key,
+      child: Semantics(
+        selected: isSelected,
+        button: true,
+        label: label,
+        child: InkWell(
+          onTap: () => _onNavTap(index),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (iconAsset != null)
+                SvgPicture.asset(
+                  iconAsset,
+                  width: 25,
+                  height: 25,
+                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                  fit: BoxFit.contain,
+                )
+              else
+                Icon(icon, size: index == 3 ? 25 : 24, color: color),
+              SizedBox(height: iconGap),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(
-              Icons.person,
-              color: _currentIndex == 3 ? activeGreen : inactiveGrey,
-            ),
-            label: '',
-          ),
-        ],
+        ),
       ),
     );
   }

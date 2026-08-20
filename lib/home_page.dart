@@ -3,7 +3,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:like_button/like_button.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,14 +10,18 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 import 'ad_helper.dart';
+import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
+import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
 
 // 메인 화면
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, required this.onInterstitialRequested});
+
+  final VoidCallback onInterstitialRequested;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -33,10 +36,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSavingLike = false;
   Set<String> _savedQuoteIds = {};
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
+  Set<String> _ownRequestQuoteIds = {};
 
-  // 전면 광고
-  InterstitialAd? _interstitialAd;
-  bool _isInterstitialShowing = false;
   final Set<String> _shownInterstitialKeys = {}; // quote 인덱스와 스크롤 방향별 광고 이력
 
   @override
@@ -45,46 +46,12 @@ class _HomeScreenState extends State<HomeScreen> {
     ResonerImageHelper.load();
     _loadQuotes();
     _initUserIdentity();
-    _loadInterstitialAd();
   }
 
   @override
   void dispose() {
     _quoteScrollController.dispose();
-    _interstitialAd?.dispose();
     super.dispose();
-  }
-
-  // 전면 광고 로드
-  void _loadInterstitialAd() {
-    InterstitialAd.load(
-      adUnitId: AdHelper.interstitialAdUnitId,
-      request: const AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) {
-          ad.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _isInterstitialShowing = false;
-              _interstitialAd = null;
-              _loadInterstitialAd(); // 다음 광고 미리 로드
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              ad.dispose();
-              _isInterstitialShowing = false;
-              _interstitialAd = null;
-              _loadInterstitialAd();
-            },
-          );
-          if (mounted) {
-            setState(() => _interstitialAd = ad);
-          }
-        },
-        onAdFailedToLoad: (error) {
-          _interstitialAd = null;
-        },
-      ),
-    );
   }
 
   String _interstitialKey(int quoteIndex, ScrollDirection direction) {
@@ -96,25 +63,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final interstitialKey = _interstitialKey(quoteIndex, direction);
     if (_shownInterstitialKeys.contains(interstitialKey)) return;
 
-    // 빠른 스크롤로 여러 광고 지점이 한 번에 빌드되더라도 현재 광고만 표시한다.
-    if (_isInterstitialShowing) {
-      _shownInterstitialKeys.add(interstitialKey);
-      return;
-    }
-
-    final ad = _interstitialAd;
-    if (ad == null) return;
-
     _shownInterstitialKeys.add(interstitialKey);
-    _isInterstitialShowing = true;
-    _interstitialAd = null;
 
     // 광고가 표시되는 시점에 진행 중인 빠른 관성 스크롤을 즉시 멈춘다.
     if (_quoteScrollController.hasClients) {
       _quoteScrollController.jumpTo(_quoteScrollController.offset);
     }
 
-    ad.show();
+    widget.onInterstitialRequested();
   }
 
   // Supabase에서 명언 데이터 가져오기 (랜덤 순서)
@@ -125,6 +81,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final list = List<Map<String, dynamic>>.from(response);
       list.shuffle(Random());
+
+      // request_quotes는 RLS로 현재 설치 사용자의 신청만 조회된다.
+      // 승인된 신청 명언은 quotes 테이블에 req_<id> 형식으로 저장된다.
+      final ownRequestQuoteIds = <String>{};
+      try {
+        final ownRequests = await supabase.from('request_quotes').select('id');
+        for (final request in ownRequests as List) {
+          final requestId = request['id']?.toString();
+          if (requestId != null && requestId.isNotEmpty) {
+            ownRequestQuoteIds.add('req_$requestId');
+          }
+        }
+      } catch (error) {
+        debugPrint('내가 신청한 명언 ID 로드 실패: $error');
+      }
 
       // req_ 접두어 명언의 이미지 일괄 조회
       final reqIds = list
@@ -154,48 +125,28 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _quotes = list;
+        _ownRequestQuoteIds = ownRequestQuoteIds;
         _isLoading = false;
       });
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('데이터를 불러오는데 실패했습니다: $error')));
-      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('데이터를 불러오는데 실패했습니다: $error')));
     }
   }
 
   // 디바이스 ID와 사용자 idx 로드
   Future<void> _initUserIdentity() async {
     try {
-      final deviceInfo = DeviceInfoPlugin();
-      String? deviceId;
-
-      if (Platform.isAndroid) {
-        final info = await deviceInfo.androidInfo;
-        deviceId = info.id;
-      } else if (Platform.isIOS) {
-        final info = await deviceInfo.iosInfo;
-        deviceId = info.identifierForVendor;
-      } else if (Platform.isWindows) {
-        final info = await deviceInfo.windowsInfo;
-        deviceId = info.deviceId;
-      } else if (Platform.isLinux) {
-        final info = await deviceInfo.linuxInfo;
-        deviceId = info.machineId;
-      } else if (Platform.isMacOS) {
-        final info = await deviceInfo.macOsInfo;
-        deviceId = info.systemGUID;
-      }
-
+      final deviceId = InstallationIdentity.id;
       _deviceId = deviceId;
-
-      if (deviceId == null) return;
 
       final user = await supabase
           .from('users')
@@ -346,111 +297,111 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 공유 카드 위젯 (이미지로 캡처용 - 깔끔한 디자인)
-  Widget _buildShareCardContent(String author, String content, String? tag) {
+  // 공유 카드 위젯 (이미지 캡처용)
+  Widget _buildShareCardContent({
+    required String author,
+    required String content,
+    ImageProvider<Object>? authorImage,
+  }) {
     return Container(
-      width: 375,
-      color: const Color(0xFFDDE7DE),
-      padding: const EdgeInsets.all(24),
+      width: 420,
+      color: const Color(0xFFE3ECE4),
+      padding: const EdgeInsets.fromLTRB(26, 34, 26, 34),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+        constraints: const BoxConstraints(minHeight: 340),
+        padding: const EdgeInsets.fromLTRB(38, 36, 36, 26),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 따옴표 장식
-            const Text(
-              '"',
-              style: TextStyle(
-                fontSize: 56,
-                color: Color(0xFF9DC3A0),
-                height: 0.8,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Pretendard',
-              ),
+            Image.asset(
+              'assets/share_quote_icon.png',
+              width: 42,
+              height: 42,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
             ),
-            const SizedBox(height: 16),
-            // 명언 텍스트
+            const SizedBox(height: 34),
             Text(
               content,
               style: const TextStyle(
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.w300,
-                color: Color(0xFF333333),
-                height: 1.7,
+                color: Color(0xFF555555),
+                height: 1.65,
                 fontFamily: 'Pretendard',
               ),
             ),
-            const SizedBox(height: 24),
-            // 저자
-            Text(
-              '— $author',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: Colors.grey[600],
-                fontFamily: 'Pretendard',
-              ),
-            ),
-            if (tag != null && tag.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDDE7DE),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '# $tag',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF5D8A62),
-                    fontFamily: 'Pretendard',
+            const SizedBox(height: 40),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ClipOval(
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    color: const Color(0xFFF0F0F0),
+                    child: authorImage == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 17,
+                            color: Color(0xFFAAAAAA),
+                          )
+                        : Image(
+                            image: authorImage,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.person,
+                                  size: 17,
+                                  color: Color(0xFFAAAAAA),
+                                ),
+                          ),
                   ),
                 ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            const Divider(color: Color(0xFFEEEEEE), thickness: 1),
-            const SizedBox(height: 12),
-            // 앱 브랜딩
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF7AAE80),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Healing Hi',
-                    style: TextStyle(
-                      fontSize: 13,
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    author,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF7AAE80),
-                      letterSpacing: 0.5,
+                      color: Color(0xFF666666),
                       fontFamily: 'Pretendard',
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF7AAE80),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 28),
+            const Divider(color: Color(0xFFE8E8E8), thickness: 1, height: 1),
+            const SizedBox(height: 28),
+            const Center(
+              child: Text(
+                '당신의 하루에 머무는 한마디',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: Color(0xFF555555),
+                  fontFamily: 'Pretendard',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Center(
+              child: Text(
+                '힐링 하이',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w300,
+                  color: Color(0xFF555555),
+                  fontFamily: 'Pretendard',
+                ),
               ),
             ),
           ],
@@ -463,9 +414,37 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _captureAndShareQuoteImage({
     required String author,
     required String content,
-    required String? tag,
     required String? quoteId,
+    required String? imageFile,
+    required String? resonerEng,
   }) async {
+    if (!mounted) return;
+
+    final requestImageUrl = quoteId == null
+        ? null
+        : _requestQuoteImages[quoteId];
+    final resolvedImagePath = requestImageUrl == null
+        ? ResonerImageHelper.resolve(imageFile, resonerEng)
+        : null;
+    final ImageProvider<Object>? authorImage = requestImageUrl != null
+        ? NetworkImage(requestImageUrl)
+        : resolvedImagePath != null
+        ? AssetImage(resolvedImagePath)
+        : null;
+
+    if (authorImage != null) {
+      try {
+        await precacheImage(
+          authorImage,
+          context,
+        ).timeout(const Duration(seconds: 3));
+      } catch (_) {
+        // 이미지 로드 실패 시 기본 프로필 아이콘을 사용한다.
+      }
+    }
+
+    if (!mounted) return;
+
     final key = GlobalKey();
     late OverlayEntry entry;
 
@@ -477,7 +456,11 @@ class _HomeScreenState extends State<HomeScreen> {
           type: MaterialType.transparency,
           child: RepaintBoundary(
             key: key,
-            child: _buildShareCardContent(author, content, tag),
+            child: _buildShareCardContent(
+              author: author,
+              content: content,
+              authorImage: authorImage,
+            ),
           ),
         ),
       ),
@@ -495,7 +478,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) throw Exception('카드 렌더링 실패');
 
       final image = await boundary.toImage(pixelRatio: 3.0);
@@ -504,15 +488,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final pngBytes = byteData.buffer.asUint8List();
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/healinghi_quote.png');
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final file = File('${tempDir.path}/healinghi_quote_$timestamp.png');
       await file.writeAsBytes(pngBytes);
 
       entry.remove();
 
-      final shareResult = await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'image/png')],
-        subject: '명언 - $author',
-      );
+      final shareResult = await Share.shareXFiles([
+        XFile(file.path, mimeType: 'image/png'),
+      ], subject: '명언 - $author');
       if (shareResult.status == ShareResultStatus.success) {
         await _incrementShareCount();
       }
@@ -537,13 +521,27 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFDDE7DE),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 32.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 박스 리스트
-              Expanded(
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            const SizedBox(
+              height: 43,
+              width: double.infinity,
+              child: Center(
+                child: Text(
+                  '오늘의 마음에 머무는 한마디를 만나보세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF595959),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 22),
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _quotes.isEmpty
@@ -559,6 +557,233 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _buildQuoteListWithAds(),
                       ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthorImage({
+    required String? quoteId,
+    required String? resolvedImagePath,
+  }) {
+    const fallback = Icon(Icons.person, size: 26, color: Color(0xFFBDBDBD));
+
+    final requestImageUrl = quoteId == null
+        ? null
+        : _requestQuoteImages[quoteId];
+
+    return ClipOval(
+      child: Container(
+        width: 50,
+        height: 50,
+        color: const Color(0xFFF0F0F0),
+        child: requestImageUrl != null
+            ? Image.network(
+                requestImageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => fallback,
+              )
+            : resolvedImagePath != null
+            ? Image.asset(
+                resolvedImagePath,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => fallback,
+              )
+            : fallback,
+      ),
+    );
+  }
+
+  Widget _buildContentBox(
+    String title,
+    String content,
+    String? quoteId,
+    String? tag,
+    String? imageFile,
+    String? resonerEng,
+    bool isTutorialTarget,
+  ) {
+    final resolvedImagePath =
+        quoteId != null && _requestQuoteImages.containsKey(quoteId)
+        ? null
+        : ResonerImageHelper.resolve(imageFile, resonerEng);
+    final isOwnRequest =
+        quoteId != null && _ownRequestQuoteIds.contains(quoteId);
+    return _AnimatedCardItem(
+      child: GestureDetector(
+        onDoubleTap: () async {
+          await Clipboard.setData(
+            ClipboardData(
+              text:
+                  '"$content" ─ $title\n'
+                  '당신의 하루에 머무는 한마디, 힐링하이\n'
+                  '(앱 링크)',
+            ),
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('클립보드에 복사되었습니다!')));
+          }
+        },
+        child: Container(
+          key: isTutorialTarget ? TutorialTargets.homeCard : null,
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(25),
+            border: isOwnRequest
+                ? Border.all(color: const Color(0xFF538CD2), width: 2)
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 상단: 프로필 이미지 + 저자명
+              Row(
+                children: [
+                  _buildAuthorImage(
+                    quoteId: quoteId,
+                    resolvedImagePath: resolvedImagePath,
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  if (isOwnRequest) ...[
+                    const SizedBox(width: 10),
+                    const Icon(
+                      Icons.bookmark,
+                      size: 15,
+                      color: Color(0xFF538CD2),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '내가 신청한 명언',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w300,
+                        color: Color(0xFF538CD2),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 18),
+              // 명언 텍스트
+              Text(
+                content,
+                textAlign: TextAlign.left,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w300,
+                  color: Color(0xFF414141),
+                  height: 25 / 18,
+                  letterSpacing: -0.36,
+                ),
+              ),
+              const SizedBox(height: 18),
+              // 하단: 태그 + 좋아요/공유 버튼
+              Row(
+                children: [
+                  // 태그
+                  if (tag != null && tag.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9),
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(18.5),
+                      ),
+                      child: Text(
+                        '# $tag',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Color(0xFF9E9E9E),
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  SizedBox(
+                    width: 130,
+                    height: 32,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        LikeButton(
+                          key: isTutorialTarget
+                              ? TutorialTargets.homeLike
+                              : null,
+                          size: 24,
+                          isLiked:
+                              quoteId != null &&
+                              _savedQuoteIds.contains(quoteId),
+                          circleColor: const CircleColor(
+                            start: Color(0xFFFF5252),
+                            end: Color(0xFFFF1744),
+                          ),
+                          bubblesColor: const BubblesColor(
+                            dotPrimaryColor: Color(0xFFFF5252),
+                            dotSecondaryColor: Color(0xFFFF8A80),
+                          ),
+                          likeBuilder: (bool isLiked) {
+                            return Image.asset(
+                              isLiked
+                                  ? 'assets/heart2.png'
+                                  : 'assets/heart1.png',
+                              width: 23,
+                              height: 19,
+                            );
+                          },
+                          onTap: (bool isLiked) async {
+                            await _toggleUserQuote(quoteId);
+                            return !isLiked;
+                          },
+                        ),
+                        IconButton(
+                          key: isTutorialTarget
+                              ? TutorialTargets.homeShare
+                              : null,
+                          onPressed: () {
+                            _captureAndShareQuoteImage(
+                              author: title,
+                              content: content,
+                              quoteId: quoteId,
+                              imageFile: imageFile,
+                              resonerEng: resonerEng,
+                            );
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 24,
+                            height: 24,
+                          ),
+                          icon: const Icon(
+                            Icons.share,
+                            color: Color(0xFF81A684),
+                          ),
+                          iconSize: 22,
+                          tooltip: '이미지로 공유하기',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -566,167 +791,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildContentBox(String title, String content, String? quoteId, String? tag, String? imageFile, String? resonerEng) {
-    final resolvedImagePath = quoteId != null && _requestQuoteImages.containsKey(quoteId)
-        ? null
-        : ResonerImageHelper.resolve(imageFile, resonerEng);
-    return _AnimatedCardItem(
-      child: GestureDetector(
-      onDoubleTap: () async {
-        await Clipboard.setData(
-          ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('클립보드에 복사되었습니다!')),
-          );
-        }
-      },
-      child: Container(
-      margin: const EdgeInsets.only(bottom: 16.0),
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 상단: 프로필 이미지 + 저자명
-          Row(
-            children: [
-              ClipOval(
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  color: Colors.grey[200],
-                  child: quoteId != null && _requestQuoteImages.containsKey(quoteId)
-                      ? Image.network(
-                          _requestQuoteImages[quoteId]!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                        )
-                      : resolvedImagePath != null
-                          ? Image.asset(
-                              resolvedImagePath,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                            )
-                          : Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // 명언 텍스트
-          Text(
-            content,
-            textAlign: TextAlign.left,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w300,
-              color: Colors.grey[800],
-              height: 1.6,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // 하단: 태그 + 좋아요/공유 버튼
-          Row(
-            children: [
-              // 태그
-              if (tag != null && tag.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '# $tag',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              const Spacer(),
-              // 좋아요 버튼
-              LikeButton(
-                size: 32,
-                isLiked: quoteId != null && _savedQuoteIds.contains(quoteId),
-                circleColor: const CircleColor(
-                  start: Color(0xFFFF5252),
-                  end: Color(0xFFFF1744),
-                ),
-                bubblesColor: const BubblesColor(
-                  dotPrimaryColor: Color(0xFFFF5252),
-                  dotSecondaryColor: Color(0xFFFF8A80),
-                ),
-                likeBuilder: (bool isLiked) {
-                  return Image.asset(
-                    isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
-                    width: 32,
-                    height: 32,
-                  );
-                },
-                onTap: (bool isLiked) async {
-                  await _toggleUserQuote(quoteId);
-                  return !isLiked;
-                },
-              ),
-              // 공유 버튼 (이미지 카드로 공유)
-              IconButton(
-                onPressed: () {
-                  _captureAndShareQuoteImage(
-                    author: title,
-                    content: content,
-                    tag: tag,
-                    quoteId: quoteId,
-                  );
-                },
-                icon: Icon(Icons.share, color: Colors.grey[600]),
-                iconSize: 24,
-                tooltip: '이미지로 공유하기',
-              ),
-            ],
-          ),
-        ],
-      ),
-      ),
-    ),
-    );
-  }
-
-  // 5개 카드마다 배너 광고, 10번째 명언마다 전면 광고를 삽입한 리스트
+  // 5개 카드마다 배너 광고, 30번째 명언마다 전면 광고를 삽입한 리스트
   Widget _buildQuoteListWithAds() {
-    const int bannerFrequency = 5;  // 명언 5개당 배너 광고 1회
-    const int interstitialFrequency = 10; // 명언 10개마다 전면 광고 1회
+    const int bannerFrequency = 5; // 명언 5개당 배너 광고 1회
+    const int interstitialFrequency = 30; // 명언 30개마다 전면 광고 1회
     final int adCount = _quotes.length ~/ bannerFrequency;
     final int totalItems = _quotes.length + adCount;
 
     return ListView.builder(
       controller: _quoteScrollController,
-      padding: const EdgeInsets.only(top: 20.0),
+      padding: EdgeInsets.zero,
       itemCount: totalItems,
       itemBuilder: (context, listIndex) {
         // 배너 광고 슬롯 여부
@@ -738,7 +812,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final int quoteIndex = listIndex - (listIndex ~/ (bannerFrequency + 1));
         if (quoteIndex >= _quotes.length) return const SizedBox.shrink();
 
-        // 10번째 명언마다 전면 광고 트리거 (9, 19, 29 ... 번째 인덱스)
+        // 30번째 명언마다 전면 광고 트리거 (29, 59, 89 ... 번째 인덱스)
         final scrollDirection = _quoteScrollController.hasClients
             ? _quoteScrollController.position.userScrollDirection
             : ScrollDirection.idle;
@@ -761,12 +835,12 @@ class _HomeScreenState extends State<HomeScreen> {
           quote['tag_kr']?.toString(),
           quote['imagefile']?.toString(),
           quote['resoner_eng']?.toString(),
+          quoteIndex == 0,
         );
       },
     );
   }
 }
-
 
 class _AnimatedCardItem extends StatefulWidget {
   final Widget child;
@@ -796,10 +870,7 @@ class _AnimatedCardItemState extends State<_AnimatedCardItem>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.15),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _controller.forward();
   }
 
@@ -813,10 +884,7 @@ class _AnimatedCardItemState extends State<_AnimatedCardItem>
   Widget build(BuildContext context) {
     return SlideTransition(
       position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: widget.child,
-      ),
+      child: FadeTransition(opacity: _fadeAnimation, child: widget.child),
     );
   }
 }
