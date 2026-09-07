@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'installation_identity.dart';
+import 'quote_share.dart';
 import 'resoner_image_helper.dart';
 import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
 
+// 튜토리얼에서 예시로 보여줄 명언 ID (실제 보관 여부와 무관하게 고정)
+const _tutorialSampleQuoteId = '10001';
+
 // 보관함 화면
 class BookmarkScreen extends StatefulWidget {
-  const BookmarkScreen({super.key});
+  const BookmarkScreen({super.key, this.isTutorialActive = false});
+
+  // 보관함 튜토리얼이 표시되는 동안에만 예시 카드를 노출한다.
+  final bool isTutorialActive;
 
   @override
   State<BookmarkScreen> createState() => _BookmarkScreenState();
@@ -23,12 +29,43 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   String? _deviceId;
   int? _userIdx;
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
+  Map<String, dynamic>? _tutorialSampleQuote;
 
   @override
   void initState() {
     super.initState();
     ResonerImageHelper.load();
     _initUserIdentity();
+    if (widget.isTutorialActive) {
+      _loadTutorialSampleQuote();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BookmarkScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isTutorialActive && !oldWidget.isTutorialActive) {
+      _loadTutorialSampleQuote();
+    }
+  }
+
+  // 튜토리얼용 예시 명언은 보관함이 비어 있어도 항상 같은 카드를 보여준다.
+  Future<void> _loadTutorialSampleQuote() async {
+    if (_tutorialSampleQuote != null) return;
+    try {
+      await ResonerImageHelper.load();
+      final quote = await supabase
+          .from('quotes')
+          .select()
+          .eq('id', _tutorialSampleQuoteId)
+          .maybeSingle();
+      if (!mounted || quote == null) return;
+      setState(() {
+        _tutorialSampleQuote = Map<String, dynamic>.from(quote);
+      });
+    } catch (e) {
+      print('튜토리얼 예시 명언 로드 실패: $e');
+    }
   }
 
   Future<void> _initUserIdentity() async {
@@ -186,54 +223,64 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     }
   }
 
-  void _shareContent(String title, String content) async {
-    try {
-      final shareResult = await Share.share(
-        '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
-        subject: title,
-      );
-      if (shareResult.status == ShareResultStatus.success) {
-        await _incrementShareCount();
-      }
-    } catch (e) {
-      await Clipboard.setData(
-        ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('내용이 클립보드에 복사되었습니다!')));
-      }
-    }
+  // 명언 카드를 이미지로 캡처해서 공유 (홈 화면과 동일한 공용 로직)
+  Future<void> _shareContent(
+    String title,
+    String content,
+    ImageProvider<Object>? authorImage,
+  ) async {
+    if (!mounted) return;
+    await QuoteShare.shareAsImage(
+      context: context,
+      author: title,
+      content: content,
+      authorImage: authorImage,
+      onShared: _incrementShareCount,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // 튜토리얼 중에는 예시 카드를 맨 위에 두어 강조 대상이 항상 존재하게 한다.
+    final sampleQuote = widget.isTutorialActive ? _tutorialSampleQuote : null;
+    final displayQuotes = <Map<String, dynamic>>[
+      if (sampleQuote != null) sampleQuote,
+      ..._savedQuotes.where(
+        (quote) =>
+            sampleQuote == null ||
+            quote['id']?.toString() != _tutorialSampleQuoteId,
+      ),
+    ];
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8E3DF),
+      backgroundColor: const Color(0xFFF8E3DE),
       body: SafeArea(
+        bottom: false,
+        minimum: const EdgeInsets.only(top: 61),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 32.0),
+          padding: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Text(
-                    '보관함',
+              const SizedBox(
+                height: 43,
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    '오래 간직하고 싶은 문장을 모아보세요.',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF595959),
                     ),
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 20),
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _savedQuotes.isEmpty
+                    : displayQuotes.isEmpty
                     ? const Center(
                         child: Text(
                           '보관한 명언이 없습니다.',
@@ -244,13 +291,16 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                     : RefreshIndicator(
                         onRefresh: _loadSavedQuotes,
                         child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 10.0),
-                          itemCount: _savedQuotes.length,
+                          padding: const EdgeInsets.fromLTRB(27, 5, 27, 5),
+                          itemCount: displayQuotes.length,
                           itemBuilder: (context, index) {
-                            final quote = _savedQuotes[index];
+                            final quote = displayQuotes[index];
                             final quoteId = quote['id']?.toString();
+                            final isSample = sampleQuote != null && index == 0;
                             return _AnimatedBookmarkCard(
-                              key: ValueKey(quoteId),
+                              key: ValueKey(
+                                isSample ? 'tutorial_sample' : quoteId,
+                              ),
                               title: '${quote['resoner_kr']}',
                               content: quote['text_kr'],
                               quoteId: quoteId,
@@ -261,6 +311,7 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                               ),
                               requestImageUrl: _requestQuoteImages[quoteId],
                               isTutorialTarget: index == 0,
+                              isSample: isSample,
                               onRemoveFromDB: _deleteFromSupabase,
                               onRemoveFromList: _removeFromList,
                               onShare: _shareContent,
@@ -293,9 +344,10 @@ class _AnimatedBookmarkCard extends StatefulWidget {
   final String? resonerImagePath;
   final String? requestImageUrl;
   final bool isTutorialTarget;
+  final bool isSample;
   final Future<void> Function(String?) onRemoveFromDB;
   final void Function(String?) onRemoveFromList;
-  final void Function(String, String) onShare;
+  final Future<void> Function(String, String, ImageProvider<Object>?) onShare;
 
   const _AnimatedBookmarkCard({
     super.key,
@@ -306,6 +358,7 @@ class _AnimatedBookmarkCard extends StatefulWidget {
     this.resonerImagePath,
     this.requestImageUrl,
     required this.isTutorialTarget,
+    this.isSample = false,
     required this.onRemoveFromDB,
     required this.onRemoveFromList,
     required this.onShare,
@@ -361,7 +414,8 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
   }
 
   Future<void> _handleUnlike() async {
-    if (_isRemoving) return;
+    // 예시 카드는 실제 보관 항목이 아니므로 삭제하지 않는다.
+    if (widget.isSample || _isRemoving) return;
     _isRemoving = true;
 
     // Supabase 삭제를 백그라운드에서 시작 (애니메이션과 병렬)
@@ -384,19 +438,11 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
       child: FadeTransition(
         opacity: _fadeAnimation,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 16.0),
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16.0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(25),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,8 +452,8 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                 children: [
                   ClipOval(
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      width: 50,
+                      height: 50,
                       color: Colors.grey[200],
                       child: widget.requestImageUrl != null
                           ? Image.network(
@@ -438,50 +484,53 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                             ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    widget.title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 18),
               // 명언 텍스트
               Text(
                 widget.content,
                 textAlign: TextAlign.left,
-                style: TextStyle(
-                  fontSize: 17,
+                style: const TextStyle(
+                  fontSize: 18,
                   fontWeight: FontWeight.w300,
-                  color: Colors.grey[800],
-                  height: 1.6,
+                  color: Color(0xFF414141),
+                  height: 25 / 18,
+                  letterSpacing: -0.36,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               // 하단: 태그 + 좋아요/공유 버튼
               Row(
                 children: [
                   // 태그
                   if (widget.tag != null && widget.tag!.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                      height: 32,
+                      alignment: Alignment.center,
+                      // Figma Tag BG: 텍스트 좌 9 / 우 11, 높이 32의 완전한 필 형태
+                      padding: const EdgeInsets.only(left: 9, right: 11),
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(20),
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
                         '# ${widget.tag}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Color(0xFF9E9E9E),
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ),
@@ -500,21 +549,42 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
                           child: child,
                         );
                       },
-                      child: Image.asset(
-                        'assets/heart2.png',
-                        width: 32,
-                        height: 32,
+                      child: SvgPicture.asset(
+                        'assets/icon/figma_saved_heart.svg',
+                        width: 23,
+                        height: 19,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 70),
                   // 공유 버튼
                   IconButton(
-                    onPressed: () =>
-                        widget.onShare(widget.title, widget.content),
-                    icon: Icon(Icons.share, color: Colors.grey[600]),
-                    iconSize: 24,
+                    onPressed: () => widget.onShare(
+                      widget.title,
+                      widget.content,
+                      widget.requestImageUrl != null
+                          ? NetworkImage(widget.requestImageUrl!)
+                          : widget.resonerImagePath != null
+                          ? AssetImage(widget.resonerImagePath!)
+                          : null,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 18,
+                      height: 20,
+                    ),
+                    style: IconButton.styleFrom(
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: SvgPicture.asset(
+                      'assets/icon/figma_card_share.svg',
+                      width: 18,
+                      height: 20,
+                    ),
                     tooltip: '공유하기',
                   ),
+                  const SizedBox(width: 19),
                 ],
               ),
             ],

@@ -442,8 +442,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
     case TutorialSection.home:
       return <_TutorialStep>[
         _TutorialStep(
-          title: '힐링 하이의 명언 카드',
-          description: '여러 분야의 명언과 출처를 한눈에 확인할 수 있어요.',
+          title: '당신의 하루에 머무는 한마디',
+          description: '다양한 주제의 명언을 편안하게 만나보세요.',
           targetKeys: <GlobalKey>[TutorialTargets.homeCard],
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(24, safeTop + 50, size.width - 48, 220),
@@ -452,8 +452,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
               _fitCalloutTop(target.bottom + 16, size, safeTop),
         ),
         _TutorialStep(
-          title: '마음에 드는 문구를 보관해요',
-          description: '하트 버튼을 누르면 문구가 보관함에 저장돼요.',
+          title: '마음에 남는 명언을 보관해요.',
+          description: '하트를 누르면 언제든 다시 꺼내 볼 수 있어요.',
           targetKeys: <GlobalKey>[TutorialTargets.homeLike],
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(size.width - 152, safeTop + 218, 58, 58),
@@ -462,8 +462,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
         _TutorialStep(
-          title: '좋은 문구를 함께 나눠요',
-          description: '공유 버튼으로 친구에게 보내거나 다른 앱에 공유할 수 있어요.',
+          title: '좋은 명언을 함께 나눠요.',
+          description: '공유 버튼을 눌러 소중한 사람에게 문장을 전해보세요.',
           targetKeys: <GlobalKey>[TutorialTargets.homeShare],
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(size.width - 88, safeTop + 218, 58, 58),
@@ -475,8 +475,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
     case TutorialSection.search:
       return <_TutorialStep>[
         _TutorialStep(
-          title: '원하는 명언을 찾아보세요',
-          description: '저자, 본문, 주제 중 검색할 항목을 선택할 수 있어요.',
+          title: '원하는 명언을 찾아보세요.',
+          description: '저자 이름, 명언 내용, 주제 중 원하는 기준으로 검색할 수 있어요.',
           targetKeys: <GlobalKey>[TutorialTargets.searchTabs],
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(24, safeTop + 145, size.width - 48, 54),
@@ -484,29 +484,23 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
         _TutorialStep(
-          title: '검색 항목을 선택해요',
-          description: '저자·본문·주제 탭을 눌러 검색 범위를 정해주세요.',
-          targetKeys: <GlobalKey>[TutorialTargets.searchTabs],
+          title: '원하는 기준으로 검색해 보세요.',
+          description: '저자·본문·주제를 선택하고 찾고 싶은 내용을 입력해 주세요.',
+          targetKeys: <GlobalKey>[
+            TutorialTargets.searchField,
+            TutorialTargets.searchTabs,
+          ],
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(24, safeTop + 145, size.width - 48, 54),
+              Rect.fromLTWH(24, safeTop + 58, size.width - 48, 141),
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
-        ),
-        _TutorialStep(
-          title: '검색어를 입력해주세요',
-          description: '위 검색창에 찾고 싶은 내용을 입력하면 결과가 바로 표시돼요.',
-          targetKeys: <GlobalKey>[TutorialTargets.searchField],
-          fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(24, safeTop + 58, size.width - 48, 62),
-          calloutTop: (size, safeTop, target) =>
-              _fitCalloutTop(target.bottom + 88, size, safeTop),
         ),
       ];
     case TutorialSection.bookmarks:
       return <_TutorialStep>[
         _TutorialStep(
-          title: '좋아요한 명언을 모아봐요',
-          description: '홈에서 하트를 누른 명언이 이 보관함에 모여요.',
+          title: '보관한 명언을 다시 만나보세요.',
+          description: '마음에 담아둔 명언을 보관함에서 언제든 다시 볼 수 있어요.',
           targetKeys: <GlobalKey>[TutorialTargets.bookmarkTab],
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(size.width * 0.625 - 32, size.height - 70, 64, 62),
@@ -515,8 +509,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
               _fitCalloutTop(target.top - 190, size, safeTop),
         ),
         _TutorialStep(
-          title: '언제든 보관함에서 지울 수 있어요',
-          description: '보관된 카드의 하트를 다시 누르면 목록에서 삭제돼요.',
+          title: '원할 때 보관을 해제할 수 있어요.',
+          description: '하트를 다시 누르면 해당 명언이 보관함에서 제외돼요.',
           targetKeys: <GlobalKey>[TutorialTargets.bookmarkLike],
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(size.width - 152, safeTop + 225, 58, 58),
@@ -528,7 +522,7 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
     case TutorialSection.profile:
       return <_TutorialStep>[
         _TutorialStep(
-          title: '개인 프로필을 설정해보세요',
+          title: '개인 프로필을 설정해보세요.',
           description: '프로필 사진, 이름, 언어를 나에게 맞게 설정할 수 있어요.',
           targetKeys: <GlobalKey>[
             TutorialTargets.profileTitle,
@@ -542,7 +536,7 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
               _fitCalloutTop(target.bottom + 16, size, safeTop),
         ),
         _TutorialStep(
-          title: '나의 공유 활동을 확인해요',
+          title: '나의 공유 활동을 확인해요.',
           description: '공유 횟수에 따라 등급이 올라가고 진행 상황을 확인할 수 있어요.',
           targetKeys: <GlobalKey>[
             TutorialTargets.profileShareLevel,

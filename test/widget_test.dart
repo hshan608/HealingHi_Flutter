@@ -30,7 +30,7 @@ void main() {
       ),
     );
 
-    expect(find.text('힐링 하이의 명언 카드'), findsOneWidget);
+    expect(find.text('당신의 하루에 머무는 한마디'), findsOneWidget);
     expect(find.text('다음'), findsOneWidget);
     expect(find.text('건너뛰기'), findsOneWidget);
 
@@ -62,7 +62,7 @@ void main() {
       ),
     );
 
-    expect(find.text('나의 공유 활동을 확인해요'), findsOneWidget);
+    expect(find.text('나의 공유 활동을 확인해요.'), findsOneWidget);
     expect(find.text('확인'), findsOneWidget);
   });
 
@@ -81,7 +81,7 @@ void main() {
               ),
               TutorialOverlay(
                 section: TutorialSection.search,
-                stepIndex: 2,
+                stepIndex: 1,
                 onNext: () {},
                 onSkip: () {},
               ),

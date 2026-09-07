@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:like_button/like_button.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 import 'dart:math';
-import 'dart:ui' as ui;
 import 'ad_helper.dart';
 import 'installation_identity.dart';
+import 'quote_share.dart';
 import 'resoner_image_helper.dart';
 import 'tutorial.dart';
+import 'app_popup.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -37,6 +37,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _savedQuoteIds = {};
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
   Set<String> _ownRequestQuoteIds = {};
+
+  // 게시 안내 팝업을 이미 보여준 내 신청 명언 ID 목록(SharedPreferences 키)
+  static const _seenOwnRequestQuoteIdsKey = 'seen_own_request_quote_ids';
 
   final Set<String> _shownInterstitialKeys = {}; // quote 인덱스와 스크롤 방향별 광고 이력
 
@@ -100,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // req_ 접두어 명언의 이미지 일괄 조회
       final reqIds = list
           .map((q) => q['id']?.toString())
-          .where((id) => id != null && id!.startsWith('req_'))
+          .where((id) => id != null && id.startsWith('req_'))
           .cast<String>()
           .toList();
       if (reqIds.isNotEmpty) {
@@ -131,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _ownRequestQuoteIds = ownRequestQuoteIds;
         _isLoading = false;
       });
+      _notifyNewlyPublishedRequests(ownRequestQuoteIds, list);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -139,6 +143,55 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('데이터를 불러오는데 실패했습니다: $error')));
+    }
+  }
+
+  // Figma Apply Update: 내 신청 명언이 새로 게시(승인)된 것을 처음 확인하면 1회 안내한다.
+  // 저장값이 없는 첫 실행에는 현재 게시 ID만 저장하고 팝업은 띄우지 않는다(기존 사용자 오탐 방지).
+  Future<void> _notifyNewlyPublishedRequests(
+    Set<String> ownRequestQuoteIds,
+    List<Map<String, dynamic>> quotes,
+  ) async {
+    // 대기 중인 신청은 quotes에 없으므로, 실제 게시된 req_ ID만 대상으로 한다.
+    final publishedIds = <String>{};
+    for (final quote in quotes) {
+      final quoteId = quote['id']?.toString();
+      if (quoteId != null && ownRequestQuoteIds.contains(quoteId)) {
+        publishedIds.add(quoteId);
+      }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final seen = prefs.getStringList(_seenOwnRequestQuoteIdsKey);
+      if (seen == null) {
+        await prefs.setStringList(
+          _seenOwnRequestQuoteIdsKey,
+          publishedIds.toList(),
+        );
+        return;
+      }
+
+      final unseen = publishedIds.difference(seen.toSet());
+      if (unseen.isEmpty || !mounted) return;
+
+      await showAppNoticePopup(
+        context,
+        icon: const Icon(
+          Icons.auto_awesome_outlined,
+          color: Color(0xFF81A684),
+          size: 30,
+        ),
+        title: '신청한 명언이 추가 됐어요!',
+        message: '신청하신 명언이 힐링 하이에 소개되었어요.\n홈에서 "내가 신청한 명언" 배지로 확인해 보세요.',
+        primaryLabel: '확인',
+      );
+      await prefs.setStringList(
+        _seenOwnRequestQuoteIdsKey,
+        {...seen, ...publishedIds}.toList(),
+      );
+    } catch (error) {
+      debugPrint('신청 명언 게시 안내 실패: $error');
     }
   }
 
@@ -297,120 +350,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 공유 카드 위젯 (이미지 캡처용)
-  Widget _buildShareCardContent({
-    required String author,
-    required String content,
-    ImageProvider<Object>? authorImage,
-  }) {
-    return Container(
-      width: 420,
-      color: const Color(0xFFE3ECE4),
-      padding: const EdgeInsets.fromLTRB(26, 34, 26, 34),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 340),
-        padding: const EdgeInsets.fromLTRB(38, 36, 36, 26),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Image.asset(
-              'assets/share_quote_icon.png',
-              width: 42,
-              height: 42,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-            ),
-            const SizedBox(height: 34),
-            Text(
-              content,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w300,
-                color: Color(0xFF555555),
-                height: 1.65,
-                fontFamily: 'Pretendard',
-              ),
-            ),
-            const SizedBox(height: 40),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                ClipOval(
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    color: const Color(0xFFF0F0F0),
-                    child: authorImage == null
-                        ? const Icon(
-                            Icons.person,
-                            size: 17,
-                            color: Color(0xFFAAAAAA),
-                          )
-                        : Image(
-                            image: authorImage,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(
-                                  Icons.person,
-                                  size: 17,
-                                  color: Color(0xFFAAAAAA),
-                                ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    author,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF666666),
-                      fontFamily: 'Pretendard',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-            const Divider(color: Color(0xFFE8E8E8), thickness: 1, height: 1),
-            const SizedBox(height: 28),
-            const Center(
-              child: Text(
-                '당신의 하루에 머무는 한마디',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w300,
-                  color: Color(0xFF555555),
-                  fontFamily: 'Pretendard',
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Center(
-              child: Text(
-                '힐링 하이',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w300,
-                  color: Color(0xFF555555),
-                  fontFamily: 'Pretendard',
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 명언 카드를 이미지로 캡처해서 공유
+  // 명언 카드를 이미지로 캡처해서 공유 (공용 로직은 quote_share.dart)
   Future<void> _captureAndShareQuoteImage({
     required String author,
     required String content,
@@ -419,101 +359,18 @@ class _HomeScreenState extends State<HomeScreen> {
     required String? resonerEng,
   }) async {
     if (!mounted) return;
-
-    final requestImageUrl = quoteId == null
-        ? null
-        : _requestQuoteImages[quoteId];
-    final resolvedImagePath = requestImageUrl == null
-        ? ResonerImageHelper.resolve(imageFile, resonerEng)
-        : null;
-    final ImageProvider<Object>? authorImage = requestImageUrl != null
-        ? NetworkImage(requestImageUrl)
-        : resolvedImagePath != null
-        ? AssetImage(resolvedImagePath)
-        : null;
-
-    if (authorImage != null) {
-      try {
-        await precacheImage(
-          authorImage,
-          context,
-        ).timeout(const Duration(seconds: 3));
-      } catch (_) {
-        // 이미지 로드 실패 시 기본 프로필 아이콘을 사용한다.
-      }
-    }
-
-    if (!mounted) return;
-
-    final key = GlobalKey();
-    late OverlayEntry entry;
-
-    entry = OverlayEntry(
-      builder: (_) => Positioned(
-        left: -10000,
-        top: 0,
-        child: Material(
-          type: MaterialType.transparency,
-          child: RepaintBoundary(
-            key: key,
-            child: _buildShareCardContent(
-              author: author,
-              content: content,
-              authorImage: authorImage,
-            ),
-          ),
-        ),
-      ),
+    final authorImage = QuoteShare.resolveAuthorImage(
+      requestImageUrl: quoteId == null ? null : _requestQuoteImages[quoteId],
+      imageFile: imageFile,
+      resonerEng: resonerEng,
     );
-
-    if (!mounted) return;
-    Overlay.of(context).insert(entry);
-
-    try {
-      // 위젯이 렌더링될 때까지 대기
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (!mounted) {
-        entry.remove();
-        return;
-      }
-
-      final boundary =
-          key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) throw Exception('카드 렌더링 실패');
-
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) throw Exception('이미지 변환 실패');
-
-      final pngBytes = byteData.buffer.asUint8List();
-      final tempDir = await getTemporaryDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${tempDir.path}/healinghi_quote_$timestamp.png');
-      await file.writeAsBytes(pngBytes);
-
-      entry.remove();
-
-      final shareResult = await Share.shareXFiles([
-        XFile(file.path, mimeType: 'image/png'),
-      ], subject: '명언 - $author');
-      if (shareResult.status == ShareResultStatus.success) {
-        await _incrementShareCount();
-      }
-    } catch (e) {
-      if (entry.mounted) entry.remove();
-      if (mounted) {
-        // 실패 시 텍스트 클립보드 복사로 폴백
-        await Clipboard.setData(
-          ClipboardData(text: '$author\n\n$content\n\nHealing Hi'),
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('이미지 생성 실패 - 텍스트가 클립보드에 복사되었습니다.')),
-          );
-        }
-      }
-    }
+    await QuoteShare.shareAsImage(
+      context: context,
+      author: author,
+      content: content,
+      authorImage: authorImage,
+      onShared: _incrementShareCount,
+    );
   }
 
   @override
@@ -521,9 +378,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFDDE7DE),
       body: SafeArea(
+        bottom: false,
+        minimum: const EdgeInsets.only(top: 61),
         child: Column(
           children: [
-            const SizedBox(height: 8),
             const SizedBox(
               height: 43,
               width: double.infinity,
@@ -533,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     color: Color(0xFF595959),
                   ),
                 ),
@@ -541,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22),
+                padding: const EdgeInsets.symmetric(horizontal: 27),
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _quotes.isEmpty
@@ -631,12 +489,18 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           key: isTutorialTarget ? TutorialTargets.homeCard : null,
           margin: const EdgeInsets.only(bottom: 18),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
+          padding: EdgeInsets.symmetric(
+            horizontal: isOwnRequest ? 12 : 16,
+            vertical: 23,
+          ),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(25),
             border: isOwnRequest
-                ? Border.all(color: const Color(0xFF538CD2), width: 2)
+                ? const Border(
+                    left: BorderSide(color: Color(0xFF538CD2), width: 4),
+                    right: BorderSide(color: Color(0xFF538CD2), width: 4),
+                  )
                 : null,
           ),
           child: Column(
@@ -657,25 +521,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 20,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: Colors.black,
                       ),
                     ),
                   ),
                   if (isOwnRequest) ...[
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.bookmark,
-                      size: 15,
-                      color: Color(0xFF538CD2),
+                    // Figma: 이름 → 배지 아이콘 → 배지 텍스트 간격 모두 15
+                    const SizedBox(width: 15),
+                    SvgPicture.asset(
+                      'assets/icon/figma_requested.svg',
+                      width: 12.5,
+                      height: 14.5,
                     ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      '내가 신청한 명언',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w300,
-                        color: Color(0xFF538CD2),
+                    const SizedBox(width: 15),
+                    const Expanded(
+                      child: Text(
+                        '내가 신청한 명언',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF538CD2),
+                        ),
                       ),
                     ),
                   ],
@@ -713,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: const TextStyle(
                           fontSize: 16,
                           color: Color(0xFF9E9E9E),
-                          fontWeight: FontWeight.w300,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ),
@@ -722,31 +589,39 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 130,
                     height: 32,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         LikeButton(
                           key: isTutorialTarget
                               ? TutorialTargets.homeLike
                               : null,
-                          size: 24,
+                          size: 23,
+                          padding: EdgeInsets.zero,
+                          likeCountPadding: EdgeInsets.zero,
                           isLiked:
                               quoteId != null &&
                               _savedQuoteIds.contains(quoteId),
+                          // Figma Like Toggle 활성 색상(#FF8788) 계열로 통일
                           circleColor: const CircleColor(
-                            start: Color(0xFFFF5252),
-                            end: Color(0xFFFF1744),
+                            start: Color(0xFFFF8788),
+                            end: Color(0xFFFF6B6C),
                           ),
                           bubblesColor: const BubblesColor(
-                            dotPrimaryColor: Color(0xFFFF5252),
-                            dotSecondaryColor: Color(0xFFFF8A80),
+                            dotPrimaryColor: Color(0xFFFF8788),
+                            dotSecondaryColor: Color(0xFFFFB3B3),
                           ),
                           likeBuilder: (bool isLiked) {
-                            return Image.asset(
-                              isLiked
-                                  ? 'assets/heart2.png'
-                                  : 'assets/heart1.png',
-                              width: 23,
-                              height: 19,
+                            return Center(
+                              child: SvgPicture.asset(
+                                'assets/icon/figma_card_heart.svg',
+                                width: 23,
+                                height: 19,
+                                colorFilter: isLiked
+                                    ? const ColorFilter.mode(
+                                        Color(0xFFFF8788),
+                                        BlendMode.srcIn,
+                                      )
+                                    : null,
+                              ),
                             );
                           },
                           onTap: (bool isLiked) async {
@@ -754,6 +629,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             return !isLiked;
                           },
                         ),
+                        const SizedBox(width: 70),
                         IconButton(
                           key: isTutorialTarget
                               ? TutorialTargets.homeShare
@@ -769,14 +645,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(
-                            width: 24,
-                            height: 24,
+                            width: 18,
+                            height: 20,
                           ),
-                          icon: const Icon(
-                            Icons.share,
-                            color: Color(0xFF81A684),
+                          style: IconButton.styleFrom(
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          iconSize: 22,
+                          icon: SvgPicture.asset(
+                            'assets/icon/figma_card_share.svg',
+                            width: 18,
+                            height: 20,
+                          ),
                           tooltip: '이미지로 공유하기',
                         ),
                       ],
@@ -800,7 +680,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return ListView.builder(
       controller: _quoteScrollController,
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(vertical: 5),
       itemCount: totalItems,
       itemBuilder: (context, listIndex) {
         // 배너 광고 슬롯 여부

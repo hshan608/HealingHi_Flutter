@@ -11,6 +11,38 @@ import 'tutorial.dart';
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
 
+// ---- Figma 검색 화면 공통 색상 ----
+const Color _appGreen = Color(0xFF81A684); // 선택 탭·확인하기·공유 아이콘
+const Color _headerBackground = Color(0xFFDDE7DE); // 헤더 배경
+const Color _listItemBackground = Color(0xFFFAFAFA); // 저자·주제 카드, 팝업 시트 배경
+const Color _listItemBorder = Color(0xFFEEEEEE); // 저자·주제 카드 테두리, 아이콘 원 배경
+// 본문 카드·팝업 카드 테두리. Figma 스크린샷 픽셀 측정값(디자인 토큰 미확인).
+const Color _quoteCardBorder = Color(0xFFA7C1A9);
+const Color _chipBackground = Color(0xFFF5F5F5); // 태그 칩 배경
+const Color _chipText = Color(0xFF9E9E9E); // 태그 칩 글자
+const Color _mutedGrey = Color(0xFF757575); // 안내 문구, 핸들, 하트 기본색
+const Color _likeActive = Color(0xFFFF8788); // Figma Like Toggle 활성 색
+const Color _quoteText = Color(0xFF595959); // 본문 카드 명언 글자
+const Color _quoteHighlight = Color(0xFF414141); // 본문 카드 검색어 강조
+const Color _popupQuoteText = Color(0xFF333333); // 팝업 카드 명언 글자
+
+// ---- Figma 검색 화면 공통 치수 ----
+const double _listTopPadding = 29; // 헤더 하단 → 첫 카드
+const double _listItemGap = 25; // 저자·주제 카드 간격
+const double _quoteCardGap = 27; // 본문 카드 간격
+const EdgeInsets _listItemListPadding = EdgeInsets.fromLTRB(
+  25,
+  _listTopPadding,
+  25,
+  _listTopPadding,
+);
+const EdgeInsets _quoteCardListPadding = EdgeInsets.fromLTRB(
+  28,
+  _listTopPadding,
+  28,
+  _listTopPadding,
+);
+
 // 서치 화면
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -78,8 +110,9 @@ class _SearchScreenState extends State<SearchScreen> {
         final imageFile = quote['imagefile']?.toString();
         final eng = quote['resoner_eng']?.toString();
         if (kr != null) {
-          if (imageFile != null && imageFile.isNotEmpty)
+          if (imageFile != null && imageFile.isNotEmpty) {
             imageFileMap[kr] = imageFile;
+          }
           if (eng != null && eng.isNotEmpty) engMap[kr] = eng;
         }
       }
@@ -87,7 +120,7 @@ class _SearchScreenState extends State<SearchScreen> {
       // req_ 접두어 명언의 이미지 일괄 조회
       final reqIds = quotes
           .map((q) => q['id']?.toString())
-          .where((id) => id != null && id!.startsWith('req_'))
+          .where((id) => id != null && id.startsWith('req_'))
           .cast<String>()
           .toList();
       if (reqIds.isNotEmpty) {
@@ -150,7 +183,7 @@ class _SearchScreenState extends State<SearchScreen> {
         await _loadSavedQuoteIds();
       }
     } catch (e) {
-      print('사용자 식별자 로드 실패: $e');
+      debugPrint('사용자 식별자 로드 실패: $e');
     }
   }
 
@@ -174,7 +207,7 @@ class _SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (e) {
-      print('저장된 명언 ID 로드 실패: $e');
+      debugPrint('저장된 명언 ID 로드 실패: $e');
     }
   }
 
@@ -334,7 +367,7 @@ class _SearchScreenState extends State<SearchScreen> {
         params: {'p_device_id': _deviceId},
       );
     } catch (e) {
-      print('공유 카운트 업데이트 실패: $e');
+      debugPrint('공유 카운트 업데이트 실패: $e');
     }
   }
 
@@ -367,6 +400,32 @@ class _SearchScreenState extends State<SearchScreen> {
     _performSearch(_searchController.text);
   }
 
+  /// 현재 검색 유형에 결과가 하나 이상 있는지
+  bool get _hasResults {
+    switch (_searchType) {
+      case 'author':
+        return _uniqueAuthors.isNotEmpty;
+      case 'subject':
+        return _uniqueSubjects.isNotEmpty;
+      default:
+        return _filteredQuotes.isNotEmpty;
+    }
+  }
+
+  /// 검색 상태에 따라 바뀌는 상단 안내문(Figma Top Text 5종)
+  String get _headerTitle {
+    if (!_hasSearched) return '지금 필요한 문장을 찾아보세요.';
+    if (!_hasResults) return '일치하는 결과를 찾지 못했어요.';
+    switch (_searchType) {
+      case 'author':
+        return '찾으시는 저자를 선택해 주세요.';
+      case 'content':
+        return '검색된 문장을 확인해 보세요.';
+      default:
+        return '찾으시는 주제를 선택해 주세요.';
+    }
+  }
+
   Widget _buildSearchTabLabel({required String type, required String label}) {
     final isSelected = _searchType == type;
 
@@ -383,10 +442,8 @@ class _SearchScreenState extends State<SearchScreen> {
               label,
               style: TextStyle(
                 fontSize: 19,
-                fontWeight: FontWeight.w800,
-                color: isSelected
-                    ? const Color(0xFF81A684)
-                    : const Color(0xFF9BA09C),
+                fontWeight: FontWeight.w700,
+                color: isSelected ? _appGreen : const Color(0xFF9BA09C),
               ),
             ),
           ),
@@ -397,7 +454,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildSearchTabs() {
     const tabGap = SizedBox(width: 25);
-    const selectedColor = Color(0xFF81A684);
+    const selectedColor = _appGreen;
     const unselectedColor = Color(0xFFE5E5E5);
 
     return SizedBox(
@@ -419,6 +476,7 @@ class _SearchScreenState extends State<SearchScreen> {
           SizedBox(
             height: 4,
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
                   child: ColoredBox(
@@ -457,21 +515,22 @@ class _SearchScreenState extends State<SearchScreen> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         resizeToAvoidBottomInset: true,
-        backgroundColor: const Color(0xFFDDE7DE),
+        backgroundColor: _headerBackground,
         body: SafeArea(
+          bottom: false,
+          minimum: const EdgeInsets.only(top: 61),
           child: Column(
             children: [
-              const SizedBox(height: 8),
-              const SizedBox(
+              SizedBox(
                 height: 43,
                 width: double.infinity,
                 child: Center(
                   child: Text(
-                    '지금 필요한 문장을 찾아보세요.',
+                    _headerTitle,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: Color(0xFF595959),
                     ),
                   ),
@@ -512,14 +571,13 @@ class _SearchScreenState extends State<SearchScreen> {
                               'TextInput.show',
                             );
                           },
-                          textAlign: _searchController.text.isEmpty
-                              ? TextAlign.left
-                              : TextAlign.center,
+                          // Figma: 입력값도 힌트와 같이 좌측 정렬
+                          textAlign: TextAlign.left,
                           textAlignVertical: TextAlignVertical.center,
-                          cursorColor: const Color(0xFF81A684),
+                          cursorColor: _appGreen,
                           style: const TextStyle(
                             fontSize: 19,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                             color: Color(0xFF414141),
                           ),
                           decoration: InputDecoration(
@@ -528,7 +586,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             hintStyle: const TextStyle(
                               color: Color(0xFF9E9E9E),
                               fontSize: 19,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w400,
                             ),
                             suffixIcon: _searchController.text.isNotEmpty
                                 ? IconButton(
@@ -560,11 +618,8 @@ class _SearchScreenState extends State<SearchScreen> {
               _buildSearchTabs(),
               Expanded(
                 child: Container(
+                  width: double.infinity,
                   color: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 16.0,
-                  ),
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _buildSearchResults(),
@@ -581,74 +636,56 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildSearchResults() {
     // 검색하지 않은 상태
     if (!_hasSearched) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.manage_search, size: 80, color: Colors.grey[300]),
-            const SizedBox(height: 20),
-            const Text(
-              '검색하고 싶은 항목을 우선 선택해주세요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '저자, 본문, 주제, 어느 것을 찾고 싶으세요?',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-            ),
-          ],
+      return _buildGuideMessage(
+        icon: SvgPicture.asset(
+          'assets/icon/figma_search_guide.svg',
+          width: 62,
+          height: 122,
         ),
+        title: '검색하고 싶은 항목을 우선 선택해주세요.',
+        subtitle: '저자, 본문, 주제, 어느 것을 찾고 싶으세요?',
       );
+    }
+
+    if (!_hasResults) {
+      return _buildNoResultsWidget();
     }
 
     // 저자 검색인 경우
     if (_searchType == 'author') {
-      if (_uniqueAuthors.isEmpty) {
-        return _buildNoResultsWidget();
-      }
       return RefreshIndicator(
         onRefresh: _loadQuotes,
-        child: ListView.builder(
+        child: ListView.separated(
+          padding: _listItemListPadding,
           itemCount: _uniqueAuthors.length,
-          itemBuilder: (context, index) {
-            final author = _uniqueAuthors[index];
-            return _buildAuthorItem(author);
-          },
+          separatorBuilder: (_, _) => const SizedBox(height: _listItemGap),
+          itemBuilder: (context, index) =>
+              _buildAuthorItem(_uniqueAuthors[index]),
         ),
       );
     }
 
     // 주제 검색인 경우
     if (_searchType == 'subject') {
-      if (_uniqueSubjects.isEmpty) {
-        return _buildNoResultsWidget();
-      }
       return RefreshIndicator(
         onRefresh: _loadQuotes,
-        child: ListView.builder(
+        child: ListView.separated(
+          padding: _listItemListPadding,
           itemCount: _uniqueSubjects.length,
-          itemBuilder: (context, index) {
-            final subject = _uniqueSubjects[index];
-            return _buildSubjectItem(subject);
-          },
+          separatorBuilder: (_, _) => const SizedBox(height: _listItemGap),
+          itemBuilder: (context, index) =>
+              _buildSubjectItem(_uniqueSubjects[index]),
         ),
       );
     }
 
     // 본문 검색인 경우
-    if (_filteredQuotes.isEmpty) {
-      return _buildNoResultsWidget();
-    }
     return RefreshIndicator(
       onRefresh: _loadQuotes,
-      child: ListView.builder(
+      child: ListView.separated(
+        padding: _quoteCardListPadding,
         itemCount: _filteredQuotes.length,
+        separatorBuilder: (_, _) => const SizedBox(height: _quoteCardGap),
         itemBuilder: (context, index) {
           final quote = _filteredQuotes[index];
           final quoteId = _extractQuoteId(quote);
@@ -665,30 +702,69 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  // 검색 결과 없음 위젯
-  Widget _buildNoResultsWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset('assets/sorry.png', width: 160, height: 160),
-          const SizedBox(height: 20),
-          const Text(
-            '아직 추가되지 않은 내용이에요.',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
+  /// 안내 화면 공통 레이아웃(Figma Guide: 아이콘 62×122 영역 → 7 → 제목 → 7 → 설명)
+  Widget _buildGuideMessage({
+    required Widget icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(height: 122, child: Center(child: icon)),
+                const SizedBox(height: 7),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: _mutedGrey,
+                    height: 23 / 19,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                // Figma는 1줄. 440px보다 좁은 기기에서 한 글자만 넘치지 않도록 축소한다.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w300,
+                      color: Colors.black,
+                      height: 19 / 16,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            '공유 달성도를 충족하시면\n자유롭게 추가 요청을 하실 수 있어요!',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-        ],
+        ),
       ),
+    );
+  }
+
+  // 검색 결과 없음 위젯
+  Widget _buildNoResultsWidget() {
+    return _buildGuideMessage(
+      // Figma는 62×62 슬픈 얼굴 벡터. 동일 SVG 자산이 없어 Material 아이콘으로 대체.
+      icon: const Icon(
+        Icons.sentiment_dissatisfied_outlined,
+        size: 62,
+        color: _mutedGrey,
+      ),
+      title: '아직 추가되지 않은 내용이에요.',
+      subtitle: '공유 달성도를 달성하면 자유롭게 추가 요청을 할 수 있어요.',
     );
   }
 
@@ -698,118 +774,11 @@ class _SearchScreenState extends State<SearchScreen> {
         .where((q) => q['resoner_kr']?.toString() == author)
         .toList();
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFFDDE7DE),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  // 핸들 바
-                  Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[400],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  // 저자 헤더
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        ClipOval(
-                          child: Container(
-                            width: 48,
-                            height: 48,
-                            color: Colors.grey[300],
-                            child: _getAuthorImagePath(author) != null
-                                ? Image.asset(
-                                    _getAuthorImagePath(author)!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        Icons.person,
-                                        color: Colors.grey[600],
-                                        size: 28,
-                                      );
-                                    },
-                                  )
-                                : Icon(
-                                    Icons.person,
-                                    color: Colors.grey[600],
-                                    size: 28,
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                author,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '명언 ${authorQuotes.length}개',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  // 명언 리스트
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: authorQuotes.length,
-                      itemBuilder: (context, index) {
-                        final quote = authorQuotes[index];
-                        final quoteId = _extractQuoteId(quote);
-                        final tag = quote['tag_kr']?.toString();
-                        return _buildAuthorQuoteCard(
-                          quote['text_kr']?.toString() ?? '',
-                          quoteId,
-                          tag,
-                          author,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    _showQuotesBottomSheet(
+      title: author,
+      leading: _buildAuthorAvatar(author, size: 73),
+      quotes: authorQuotes,
+      authorOf: (_) => author,
     );
   }
 
@@ -819,103 +788,142 @@ class _SearchScreenState extends State<SearchScreen> {
         .where((q) => q['tag_kr']?.toString() == subject)
         .toList();
 
-    showModalBottomSheet(
+    _showQuotesBottomSheet(
+      title: subject,
+      leading: _buildSubjectIcon(size: 73, iconSize: 40),
+      quotes: subjectQuotes,
+      authorOf: (quote) => quote['resoner_kr']?.toString() ?? '',
+    );
+  }
+
+  /// 저자·주제 공통 결과 팝업(Figma Pop up 49:3726 / 49:3842)
+  void _showQuotesBottomSheet({
+    required String title,
+    required Widget leading,
+    required List<Map<String, dynamic>> quotes,
+    required String Function(Map<String, dynamic> quote) authorOf,
+  }) {
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
       builder: (context) {
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
         return DraggableScrollableSheet(
-          initialChildSize: 0.75,
+          // Figma: 안내 라벨 23 + 간격 20 + 시트 739 = 782 / 956
+          initialChildSize: 0.82,
           minChildSize: 0.4,
           maxChildSize: 0.95,
           builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFFDDE7DE),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  // 핸들 바
-                  Container(
-                    margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[400],
-                      borderRadius: BorderRadius.circular(2),
+            return Column(
+              children: [
+                // 스크림 위 스와이프 안내 라벨
+                const SizedBox(
+                  height: 23,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '위로 올려 더 보기 / 아래로 내려 돌아가기',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFFCBCBCB),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   ),
-                  // 주제 헤더
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
+                ),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      color: _listItemBackground,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(14),
+                      ),
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
+                        const SizedBox(height: 19),
+                        // 핸들 바
                         Container(
                           width: 48,
-                          height: 48,
+                          height: 4,
                           decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.tag,
-                            color: Colors.grey[600],
-                            size: 28,
+                            color: _mutedGrey,
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(height: 19),
+                        // Info 행: 아바타 · 이름 · 명언 개수
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 35),
+                          child: SizedBox(
+                            height: 79,
+                            child: Row(
+                              children: [
+                                leading,
+                                const SizedBox(width: 30),
+                                Expanded(
+                                  child: Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${quotes.length}개',
+                                  style: const TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 19),
+                        // 명언 카드 리스트
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                subject,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '명언 ${subjectQuotes.length}개',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
+                          child: ListView.separated(
+                            controller: scrollController,
+                            padding: EdgeInsets.fromLTRB(
+                              15,
+                              0,
+                              15,
+                              19 + bottomInset,
+                            ),
+                            itemCount: quotes.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 19),
+                            itemBuilder: (context, index) {
+                              final quote = quotes[index];
+                              return _buildPopupQuoteCard(
+                                content: quote['text_kr']?.toString() ?? '',
+                                quoteId: _extractQuoteId(quote),
+                                tag: quote['tag_kr']?.toString(),
+                                author: authorOf(quote),
+                              );
+                            },
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1),
-                  // 명언 리스트
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: subjectQuotes.length,
-                      itemBuilder: (context, index) {
-                        final quote = subjectQuotes[index];
-                        final quoteId = _extractQuoteId(quote);
-                        final author = quote['resoner_kr']?.toString() ?? '';
-                        return _buildAuthorQuoteCard(
-                          quote['text_kr']?.toString() ?? '',
-                          quoteId,
-                          null, // 주제 팝업에서는 태그 대신 저자를 보여주므로 tag는 null
-                          author,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             );
           },
         );
@@ -923,211 +931,189 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  // 주제 아이템 위젯
-  Widget _buildSubjectItem(String subject) {
-    final quoteCount = _allQuotes
-        .where((q) => q['tag_kr']?.toString() == subject)
-        .length;
-
-    return GestureDetector(
-      onTap: () => _showSubjectQuotesDialog(subject),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
-        decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(8.0),
-          border: Border.all(color: Colors.grey[200]!),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.tag, color: Colors.grey[600], size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    subject,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  Text(
-                    '명언 ${quoteCount}개',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: Colors.grey[400]),
-          ],
-        ),
+  /// 팝업 내 명언 카드(Figma Card: 1px 녹색 테두리, 반지름 24, 패딩 25/26/25/19)
+  Widget _buildPopupQuoteCard({
+    required String content,
+    required String? quoteId,
+    required String? tag,
+    required String author,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(25, 26, 25, 19),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _quoteCardBorder),
       ),
-    );
-  }
-
-  // 저자 팝업 내 명언 카드
-  Widget _buildAuthorQuoteCard(
-    String content,
-    String? quoteId,
-    String? tag,
-    String author,
-  ) {
-    return StatefulBuilder(
-      builder: (context, setCardState) {
-        final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            content,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w300,
+              color: _popupQuoteText,
+              height: 25 / 18,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                content,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w300,
-                  color: Colors.grey[800],
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  if (tag != null && tag.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '# $tag',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  LikeButton(
-                    size: 28,
-                    isLiked: isSaved,
-                    circleColor: const CircleColor(
-                      start: Color(0xFFFF5252),
-                      end: Color(0xFFFF1744),
-                    ),
-                    bubblesColor: const BubblesColor(
-                      dotPrimaryColor: Color(0xFFFF5252),
-                      dotSecondaryColor: Color(0xFFFF8A80),
-                    ),
-                    likeBuilder: (bool isLiked) {
-                      return Image.asset(
-                        isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
-                        width: 28,
-                        height: 28,
-                      );
-                    },
-                    onTap: (bool isLiked) async {
-                      await _toggleUserQuote(quoteId);
-                      setCardState(() {});
-                      if (mounted) setState(() {});
-                      return !isLiked;
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _shareContent(author, content),
-                    child: Icon(Icons.share, color: Colors.grey[600], size: 22),
-                  ),
-                ],
-              ),
-            ],
+          // Figma: 본문 하단 → Footer 상단 35
+          const SizedBox(height: 35),
+          _buildCardFooter(
+            tag: tag,
+            quoteId: quoteId,
+            author: author,
+            content: content,
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
   // 저자 아이템 위젯
   Widget _buildAuthorItem(String author) {
-    return GestureDetector(
+    return _buildListItem(
       onTap: () => _showAuthorQuotesDialog(author),
+      leading: _buildAuthorAvatar(author, size: 59),
+      title: author,
+    );
+  }
+
+  // 주제 아이템 위젯
+  Widget _buildSubjectItem(String subject) {
+    return _buildListItem(
+      onTap: () => _showSubjectQuotesDialog(subject),
+      // Figma "Frame 9" 60×59: 이름 시작 위치(x=87)를 맞추기 위해 60 폭 안에 59 원을 둔다
+      leading: SizedBox(
+        width: 60,
+        height: 59,
+        child: Center(child: _buildSubjectIcon(size: 59, iconSize: 32)),
+      ),
+      title: subject,
+    );
+  }
+
+  /// 저자·주제 공통 리스트 카드(Figma Author Card / Topic Card: 390×80)
+  Widget _buildListItem({
+    required VoidCallback onTap,
+    required Widget leading,
+    required String title,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8.0),
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+        height: 80,
+        padding: const EdgeInsets.symmetric(horizontal: 15),
         decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(8.0),
-          border: Border.all(color: Colors.grey[200]!),
+          color: _listItemBackground,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _listItemBorder),
         ),
         child: Row(
           children: [
-            ClipOval(
-              child: Container(
-                width: 40,
-                height: 40,
-                color: Colors.grey[300],
-                child: _getAuthorImagePath(author) != null
-                    ? Image.asset(
-                        _getAuthorImagePath(author)!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.person,
-                            color: Colors.grey[600],
-                            size: 24,
-                          );
-                        },
-                      )
-                    : Icon(Icons.person, color: Colors.grey[600], size: 24),
-              ),
-            ),
+            leading,
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                author,
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey[400]),
+            const SizedBox(width: 12),
+            _buildViewAction(),
           ],
         ),
       ),
     );
   }
 
+  /// 카드 우측 "확인하기 ▶"(Figma View Action)
+  Widget _buildViewAction() {
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '확인하기',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: _appGreen,
+          ),
+        ),
+        SizedBox(width: 8),
+        CustomPaint(
+          size: Size(8, 12),
+          painter: _RightTrianglePainter(_appGreen),
+        ),
+      ],
+    );
+  }
+
+  /// 저자 이미지 원형 아바타
+  Widget _buildAuthorAvatar(String author, {required double size}) {
+    return _buildCircleImage(
+      size: size,
+      imagePath: _getAuthorImagePath(author),
+    );
+  }
+
+  /// 원형 이미지(네트워크 → 자산 → 사람 아이콘 순으로 폴백)
+  Widget _buildCircleImage({
+    required double size,
+    String? imagePath,
+    String? networkUrl,
+  }) {
+    final fallback = Icon(
+      Icons.person,
+      size: size * 0.55,
+      color: Colors.grey[500],
+    );
+    final Widget image;
+    if (networkUrl != null) {
+      image = Image.network(
+        networkUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      );
+    } else if (imagePath != null) {
+      image = Image.asset(
+        imagePath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      );
+    } else {
+      image = fallback;
+    }
+    return ClipOval(
+      child: Container(
+        width: size,
+        height: size,
+        color: _listItemBorder,
+        child: image,
+      ),
+    );
+  }
+
+  /// 주제 아이콘. Figma는 녹색 태그 벡터이나 동일 SVG 자산이 없어 Material 아이콘으로 대체.
+  Widget _buildSubjectIcon({required double size, required double iconSize}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        color: _listItemBorder,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(Icons.local_offer_rounded, size: iconSize, color: _appGreen),
+    );
+  }
+
+  /// 검색어 부분만 굵게 강조한 본문 텍스트
   Widget _buildHighlightedContent(String content) {
     final query = _searchController.text;
     final matches = query.isEmpty
@@ -1136,11 +1122,15 @@ class _SearchScreenState extends State<SearchScreen> {
             RegExp.escape(query),
             caseSensitive: false,
           ).allMatches(content).toList();
-    final textStyle = TextStyle(
-      fontSize: 17,
+    const textStyle = TextStyle(
+      fontSize: 18,
       fontWeight: FontWeight.w300,
-      color: Colors.grey[800],
-      height: 1.6,
+      color: _quoteText,
+      height: 25 / 18,
+    );
+    const highlightStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      color: _quoteHighlight,
     );
 
     if (matches.isEmpty) {
@@ -1156,7 +1146,7 @@ class _SearchScreenState extends State<SearchScreen> {
       spans.add(
         TextSpan(
           text: content.substring(match.start, match.end),
-          style: const TextStyle(fontWeight: FontWeight.w700),
+          style: highlightStyle,
         ),
       );
       currentIndex = match.end;
@@ -1172,6 +1162,112 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  /// 태그 칩(Figma Tag BG: 높이 32, 배경 #F5F5F5, 글자 16px #9E9E9E)
+  Widget _buildTagChip(String tag) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.only(left: 9, right: 11),
+      decoration: BoxDecoration(
+        color: _chipBackground,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          '# $tag',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            color: _chipText,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 카드 하단: 태그 칩 + 하트·공유 액션 그룹(Figma Footer 높이 32, Action Group 폭 130)
+  Widget _buildCardFooter({
+    required String? tag,
+    required String? quoteId,
+    required String author,
+    required String content,
+  }) {
+    final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
+    return Row(
+      children: [
+        Expanded(
+          child: tag != null && tag.isNotEmpty
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: _buildTagChip(tag),
+                )
+              : const SizedBox.shrink(),
+        ),
+        SizedBox(
+          width: 130,
+          height: 32,
+          child: Row(
+            children: [
+              LikeButton(
+                size: 23,
+                padding: EdgeInsets.zero,
+                likeCountPadding: EdgeInsets.zero,
+                isLiked: isSaved,
+                circleColor: const CircleColor(
+                  start: _likeActive,
+                  end: Color(0xFFFF6B6C),
+                ),
+                bubblesColor: const BubblesColor(
+                  dotPrimaryColor: _likeActive,
+                  dotSecondaryColor: Color(0xFFFFB3B3),
+                ),
+                likeBuilder: (bool isLiked) {
+                  return Center(
+                    child: SvgPicture.asset(
+                      'assets/icon/figma_card_heart.svg',
+                      width: 23,
+                      height: 19,
+                      colorFilter: isLiked
+                          ? const ColorFilter.mode(_likeActive, BlendMode.srcIn)
+                          : null,
+                    ),
+                  );
+                },
+                onTap: (bool isLiked) async {
+                  await _toggleUserQuote(quoteId);
+                  // 저장 실패 시 하트가 뒤집히지 않도록 실제 보관 상태를 반환
+                  return quoteId != null && _savedQuoteIds.contains(quoteId);
+                },
+              ),
+              const SizedBox(width: 70),
+              IconButton(
+                onPressed: () => _shareContent(author, content),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 18,
+                  height: 20,
+                ),
+                style: IconButton.styleFrom(
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: SvgPicture.asset(
+                  'assets/icon/figma_card_share.svg',
+                  width: 18,
+                  height: 20,
+                ),
+                tooltip: '공유하기',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 본문 검색 결과 카드(Figma Cards 49:4050: 384×214, 1px 녹색 테두리, 반지름 24)
   Widget _buildContentBox(
     String title,
     String content,
@@ -1180,143 +1276,81 @@ class _SearchScreenState extends State<SearchScreen> {
     String? imageFile,
     String? resonerEng,
   ) {
-    return StatefulBuilder(
-      builder: (context, setCardState) {
-        final isSaved = quoteId != null && _savedQuoteIds.contains(quoteId);
-        final imagePath = ResonerImageHelper.resolve(imageFile, resonerEng);
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16.0),
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16.0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final imagePath = ResonerImageHelper.resolve(imageFile, resonerEng);
+    final networkUrl = quoteId != null ? _requestQuoteImages[quoteId] : null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _quoteCardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 상단: 프로필 이미지 + 저자명
+          Row(
             children: [
-              // 상단: 프로필 이미지 + 저자명
-              Row(
-                children: [
-                  ClipOval(
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      color: Colors.grey[200],
-                      child:
-                          quoteId != null &&
-                              _requestQuoteImages.containsKey(quoteId)
-                          ? Image.network(
-                              _requestQuoteImages[quoteId]!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(
-                                    Icons.person,
-                                    size: 20,
-                                    color: Colors.grey[400],
-                                  ),
-                            )
-                          : imagePath != null
-                          ? Image.asset(
-                              imagePath,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.person,
-                                  size: 20,
-                                  color: Colors.grey[400],
-                                );
-                              },
-                            )
-                          : Icon(
-                              Icons.person,
-                              size: 20,
-                              color: Colors.grey[400],
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
+              _buildCircleImage(
+                size: 50,
+                imagePath: imagePath,
+                networkUrl: networkUrl,
               ),
-              const SizedBox(height: 14),
-              // 명언 텍스트
-              _buildHighlightedContent(content),
-              const SizedBox(height: 16),
-              // 하단: 태그 + 좋아요/공유 버튼
-              Row(
-                children: [
-                  if (tag != null && tag.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '# $tag',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  LikeButton(
-                    size: 32,
-                    isLiked: isSaved,
-                    circleColor: const CircleColor(
-                      start: Color(0xFFFF5252),
-                      end: Color(0xFFFF1744),
-                    ),
-                    bubblesColor: const BubblesColor(
-                      dotPrimaryColor: Color(0xFFFF5252),
-                      dotSecondaryColor: Color(0xFFFF8A80),
-                    ),
-                    likeBuilder: (bool isLiked) {
-                      return Image.asset(
-                        isLiked ? 'assets/heart2.png' : 'assets/heart1.png',
-                        width: 32,
-                        height: 32,
-                      );
-                    },
-                    onTap: (bool isLiked) async {
-                      await _toggleUserQuote(quoteId);
-                      setCardState(() {});
-                      if (mounted) setState(() {});
-                      return !isLiked;
-                    },
+              const SizedBox(width: 15),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
                   ),
-                  IconButton(
-                    onPressed: () => _shareContent(title, content),
-                    icon: Icon(Icons.share, color: Colors.grey[600]),
-                    iconSize: 24,
-                    tooltip: '공유하기',
-                  ),
-                ],
+                ),
               ),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 18),
+          // 명언 텍스트(검색어 강조)
+          _buildHighlightedContent(content),
+          const SizedBox(height: 18),
+          // 하단: 태그 + 좋아요/공유 버튼
+          _buildCardFooter(
+            tag: tag,
+            quoteId: quoteId,
+            author: title,
+            content: content,
+          ),
+        ],
+      ),
     );
   }
+}
+
+/// 저자·주제 카드 우측의 8×12 우향 삼각형(Figma "Button" 폴리곤). 전용 SVG가 없어 직접 그린다.
+class _RightTrianglePainter extends CustomPainter {
+  const _RightTrianglePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, size.height / 2)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RightTrianglePainter oldDelegate) =>
+      oldDelegate.color != color;
 }

@@ -190,18 +190,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   bool _tutorialStateLoaded = false;
   int _tutorialStepIndex = 0;
 
-  late final List<Widget> _screens;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _screens = [
-      HomeScreen(onInterstitialRequested: _requestInterstitial),
-      const SearchScreen(),
-      const BookmarkScreen(),
-      MyPageScreen(onInterstitialRequested: _requestInterstitial),
-    ];
     _tutorialStore = TutorialProgressStore(supabase);
     _loadTutorialProgress();
     _loadInterstitialAd();
@@ -328,8 +320,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _tutorialStepCount(TutorialSection section) {
     switch (section) {
       case TutorialSection.home:
-      case TutorialSection.search:
         return 3;
+      case TutorialSection.search:
       case TutorialSection.bookmarks:
       case TutorialSection.profile:
         return 2;
@@ -375,10 +367,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     return Stack(
       children: [
         Scaffold(
-          body: _screens[_currentIndex],
+          body: _buildCurrentScreen(),
           bottomNavigationBar: Container(
             height: 80,
             color: const Color(0xFFF8F9FE),
+            padding: const EdgeInsets.symmetric(horizontal: 11),
             child: Row(
               children: [
                 _buildNavigationItem(
@@ -392,24 +385,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 _buildNavigationItem(
                   index: 1,
                   label: '검색',
-                  icon: Icons.search_rounded,
+                  iconAsset: 'assets/icon/figma_nav_search.svg',
                   activeColor: activeGreen,
                   inactiveColor: inactiveGrey,
                 ),
                 _buildNavigationItem(
                   index: 2,
                   label: '보관함',
-                  icon: _currentIndex == 2
-                      ? Icons.favorite
-                      : Icons.favorite_border,
-                  activeColor: activeGreen,
+                  iconAsset: _currentIndex == 2
+                      ? 'assets/icon/figma_nav_saved.svg'
+                      : 'assets/icon/figma_nav_heart.svg',
+                  activeColor: const Color(0xFFFF8788),
                   inactiveColor: inactiveGrey,
+                  iconGap: 4, // Figma 실측 약 3.9
                   key: TutorialTargets.bookmarkTab,
                 ),
                 _buildNavigationItem(
                   index: 3,
                   label: '설정',
-                  icon: Icons.settings_outlined,
+                  iconAsset: 'assets/icon/figma_nav_settings.svg',
                   activeColor: activeGreen,
                   inactiveColor: inactiveGrey,
                 ),
@@ -426,6 +420,24 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           ),
       ],
     );
+  }
+
+  // 보관함 튜토리얼 여부를 화면에 내려주기 위해 빌드 시점에 구성한다.
+  Widget _buildCurrentScreen() {
+    switch (_currentIndex) {
+      case 0:
+        return HomeScreen(onInterstitialRequested: _requestInterstitial);
+      case 1:
+        return const SearchScreen();
+      case 2:
+        return BookmarkScreen(
+          isTutorialActive:
+              _shouldShowTutorial &&
+              _currentTutorialSection == TutorialSection.bookmarks,
+        );
+      default:
+        return MyPageScreen(onInterstitialRequested: _requestInterstitial);
+    }
   }
 
   Widget _buildNavigationItem({
@@ -456,8 +468,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               if (iconAsset != null)
                 SvgPicture.asset(
                   iconAsset,
-                  width: 25,
-                  height: 25,
+                  width: index == 2
+                      ? 29.2
+                      : (index == 3 ? 27 : (index == 1 ? 24 : 25)),
+                  height: index == 2
+                      ? 25.2
+                      : (index == 3 ? 27 : (index == 1 ? 24 : 25)),
                   colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
                   fit: BoxFit.contain,
                 )
@@ -468,7 +484,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 label,
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   color: color,
                 ),
               ),

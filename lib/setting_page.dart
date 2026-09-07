@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -12,6 +13,7 @@ import 'nickname_generator.dart';
 import 'notification_service.dart';
 import 'admin_page.dart';
 import 'tutorial.dart';
+import 'app_popup.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -59,6 +61,8 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
   static const _fieldBorder = Color(0xFFE0E0E0);
   static const _hintColor = Color(0xFFA3A3A3);
   static const _submitBlue = Color(0xFF538CD2);
+  // Figma: 스크롤 좌우 10 + 필드 좌우 20 → 화면 인셋 30(필드 폭 380)
+  static const _fieldPadding = EdgeInsets.symmetric(horizontal: 20);
 
   final TextEditingController _quoteController = TextEditingController();
   final TextEditingController _authorController = TextEditingController();
@@ -77,7 +81,6 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
   Uint8List? _imagePreviewBytes;
   bool _isLoadingCategories = true;
   bool _isSubmitting = false;
-  bool _isSubmitted = false;
 
   @override
   void initState() {
@@ -224,10 +227,8 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
       }
 
       if (!mounted) return;
-      setState(() => _isSubmitted = true);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onInterstitialRequested();
-      });
+      setState(() => _isSubmitting = false);
+      await _showCompletionPopup();
     } catch (error) {
       if (!mounted) return;
       debugPrint('명언 신청 실패: $error');
@@ -257,151 +258,160 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isSubmitted) return _buildSuccessPage();
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '명언 신청',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 188,
-                child: ClipRect(
-                  child: Image.asset(
-                    'assets/quotes_illust.png',
-                    fit: BoxFit.cover,
+        bottom: false,
+        // Figma Apply Top Text: Settings와 같은 규격(상단 61, 높이 43)
+        minimum: const EdgeInsets.only(top: 61),
+        child: Column(
+          children: [
+            const SizedBox(
+              height: 43,
+              width: double.infinity,
+              child: Center(
+                child: Text(
+                  '힐링 하이에 새로운 문장을 더해보세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF595959),
                   ),
                 ),
               ),
-              _buildIntroduction(),
-              const SizedBox(height: 124),
-              _buildLabel('명언 카테고리', '필수'),
-              const SizedBox(height: 14),
-              Container(key: _categoryFieldKey, child: _buildCategoryField()),
-              const SizedBox(height: 44),
-              _buildLabel('저자', '필수'),
-              const SizedBox(height: 14),
-              Column(
-                key: _authorFieldKey,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 47,
-                    child: TextField(
-                      controller: _authorController,
-                      maxLength: 50,
-                      style: const TextStyle(fontSize: 17),
-                      onChanged: (value) {
-                        if (_authorError != null && value.trim().isNotEmpty) {
-                          setState(() => _authorError = null);
-                        }
-                      },
-                      decoration: _inputDecoration(
-                        hintText: '저자를 입력해 주세요.',
-                        hasError: _authorError != null,
-                      ).copyWith(counterText: ''),
-                    ),
-                  ),
-                  if (_authorError != null) _buildFieldError(_authorError!),
-                ],
-              ),
-              const SizedBox(height: 44),
-              _buildLabel('명언 내용', '필수'),
-              const SizedBox(height: 14),
-              Column(
-                key: _quoteFieldKey,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 169,
-                    child: TextField(
-                      controller: _quoteController,
-                      maxLines: null,
-                      expands: true,
-                      maxLength: 300,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: const TextStyle(fontSize: 17, height: 1.45),
-                      onChanged: (value) {
-                        if (_quoteError != null && value.trim().isNotEmpty) {
-                          setState(() => _quoteError = null);
-                        }
-                      },
-                      decoration: _inputDecoration(
-                        hintText: '명언 내용을 입력해 주세요.',
-                        hasError: _quoteError != null,
-                        contentPadding: const EdgeInsets.fromLTRB(
-                          20,
-                          17,
-                          20,
-                          17,
-                        ),
-                      ).copyWith(counterText: ''),
-                    ),
-                  ),
-                  if (_quoteError != null) _buildFieldError(_quoteError!),
-                ],
-              ),
-              const SizedBox(height: 44),
-              _buildLabel('저자 사진', '선택'),
-              const SizedBox(height: 14),
-              _buildImagePicker(),
-              const SizedBox(height: 48),
-              if (_submitError != null) ...[
-                _buildSubmitError(_submitError!),
-                const SizedBox(height: 16),
-              ],
-              SizedBox(
-                width: double.infinity,
-                height: 53,
-                child: ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _submitBlue,
-                    disabledBackgroundColor: _submitBlue.withValues(
-                      alpha: 0.55,
-                    ),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(32),
-                    ),
-                  ),
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                // Figma Middle: 좌우 10, 상단 8. 제목·필드·일러스트는 개별 패딩으로 맞춘다.
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 28),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 5),
+                    // Figma PIC: 360×200, 화면 인셋 40
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 30),
+                      child: SizedBox(
+                        height: 200,
+                        child: ClipRect(
+                          child: Image.asset(
+                            'assets/quotes_illust.png',
+                            fit: BoxFit.cover,
                           ),
-                        )
-                      : const Icon(Icons.note_add_outlined, size: 24),
-                  label: Text(
-                    _isSubmitting ? '신청 중...' : '명언 신청하기',
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 30),
+                      child: _buildIntroduction(),
+                    ),
+                    // Figma: 본문 하단 5 + 섹션 간격 38
+                    const SizedBox(height: 43),
+                    _buildLabel('명언 카테고리', '필수'),
+                    const SizedBox(height: 11),
+                    Padding(
+                      padding: _fieldPadding,
+                      child: Container(
+                        key: _categoryFieldKey,
+                        child: _buildCategoryField(),
+                      ),
+                    ),
+                    const SizedBox(height: 38),
+                    _buildLabel('저자', '필수'),
+                    const SizedBox(height: 11),
+                    Padding(
+                      padding: _fieldPadding,
+                      child: Column(
+                        key: _authorFieldKey,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            height: 50,
+                            child: TextField(
+                              controller: _authorController,
+                              maxLength: 50,
+                              style: const TextStyle(fontSize: 17),
+                              onChanged: (value) {
+                                if (_authorError != null &&
+                                    value.trim().isNotEmpty) {
+                                  setState(() => _authorError = null);
+                                }
+                              },
+                              decoration: _inputDecoration(
+                                hintText: '저자를 입력해 주세요.',
+                                hasError: _authorError != null,
+                              ).copyWith(counterText: ''),
+                            ),
+                          ),
+                          if (_authorError != null)
+                            _buildFieldError(_authorError!),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 38),
+                    _buildLabel('명언 내용', '필수'),
+                    const SizedBox(height: 11),
+                    Padding(
+                      padding: _fieldPadding,
+                      child: Column(
+                        key: _quoteFieldKey,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Figma Text Box: 높이 206, 내부 패딩 20
+                          SizedBox(
+                            height: 206,
+                            child: TextField(
+                              controller: _quoteController,
+                              maxLines: null,
+                              expands: true,
+                              maxLength: 300,
+                              textAlignVertical: TextAlignVertical.top,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                height: 1.45,
+                              ),
+                              onChanged: (value) {
+                                if (_quoteError != null &&
+                                    value.trim().isNotEmpty) {
+                                  setState(() => _quoteError = null);
+                                }
+                              },
+                              decoration: _inputDecoration(
+                                hintText: '명언 내용을 입력해 주세요.',
+                                hasError: _quoteError != null,
+                                contentPadding: const EdgeInsets.all(20),
+                              ).copyWith(counterText: ''),
+                            ),
+                          ),
+                          if (_quoteError != null)
+                            _buildFieldError(_quoteError!),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 38),
+                    _buildLabel('저자 사진', '선택'),
+                    const SizedBox(height: 11),
+                    Padding(padding: _fieldPadding, child: _buildImagePicker()),
+                    const SizedBox(height: 38),
+                    if (_submitError != null) ...[
+                      Padding(
+                        padding: _fieldPadding,
+                        child: _buildSubmitError(_submitError!),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    // Figma Apply 버튼: 높이 52, 화면 인셋 10(폭 420)
+                    _buildSubmitButton(),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -463,26 +473,30 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
   }
 
   Widget _buildLabel(String title, String requirement) {
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '$title ',
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 19,
-              fontWeight: FontWeight.w500,
+    // Figma ID Title: 좌우 16(화면 26)
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$title ',
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 19,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-          TextSpan(
-            text: '($requirement)',
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+            TextSpan(
+              text: '($requirement)',
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -490,8 +504,9 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
   InputDecoration _inputDecoration({
     required String hintText,
     bool hasError = false,
+    // Figma ID: 필드 내부 텍스트 좌우 23
     EdgeInsetsGeometry contentPadding = const EdgeInsets.symmetric(
-      horizontal: 20,
+      horizontal: 23,
       vertical: 12,
     ),
   }) {
@@ -522,8 +537,8 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          height: 47,
-          padding: const EdgeInsets.only(left: 20, right: 16),
+          height: 50,
+          padding: const EdgeInsets.only(left: 23, right: 25),
           decoration: BoxDecoration(
             color: _fieldBackground,
             borderRadius: BorderRadius.circular(20),
@@ -535,10 +550,13 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
             child: DropdownButton<String>(
               value: _selectedCategory,
               isExpanded: true,
-              icon: const Icon(
-                Icons.arrow_drop_down,
-                size: 22,
-                color: Color(0xFF777777),
+              // Figma Select: 12×8 삼각형 화살표
+              icon: const SizedBox(
+                width: 12,
+                height: 8,
+                child: CustomPaint(
+                  painter: _DropdownTrianglePainter(color: Color(0xFF777777)),
+                ),
               ),
               hint: Text(
                 _isLoadingCategories ? '카테고리 로딩 중...' : '카테고리를 선택해 주세요.',
@@ -633,7 +651,8 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
       onTap: _pickAuthorImage,
       child: Container(
         width: double.infinity,
-        height: 169,
+        // Figma IMG Box: 높이 136
+        height: 136,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: _fieldBackground,
@@ -644,7 +663,7 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
             ? const Center(
                 child: Icon(
                   Icons.image_outlined,
-                  size: 42,
+                  size: 56,
                   color: Color(0xFF777777),
                 ),
               )
@@ -683,65 +702,73 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
     );
   }
 
-  Widget _buildSuccessPage() {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.check_circle_outline,
-                  color: _appMutedGreen,
-                  size: 68,
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  '신청이 완료되었습니다!',
-                  style: TextStyle(
-                    color: Colors.black87,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  '관리자 검토 후 등록됩니다.\n신청용 공유 카운트만 0회로 초기화되며 공유 등급은 유지됩니다.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF777777), fontSize: 15),
-                ),
-                const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  height: 53,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _submitBlue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(32),
-                      ),
-                    ),
-                    child: const Text(
-                      '확인',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+  // Figma Apply 버튼: figma_add_note 24 + 간격 3 + 19px 문구
+  Widget _buildSubmitButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: _isSubmitting ? null : _submit,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _submitBlue,
+          disabledBackgroundColor: _submitBlue.withValues(alpha: 0.55),
+          foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
           ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isSubmitting)
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: Padding(
+                  padding: EdgeInsets.all(2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+              )
+            else
+              SvgPicture.asset(
+                'assets/icon/figma_add_note.svg',
+                width: 24,
+                height: 24,
+              ),
+            const SizedBox(width: 3),
+            Text(
+              _isSubmitting ? '신청 중...' : '명언 신청하기',
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  // Figma Apply Fin: 400×241 안내 팝업으로 완료를 알리고, 확인 시 신청 화면을 닫는다.
+  Future<void> _showCompletionPopup() async {
+    await showAppNoticePopup(
+      context,
+      barrierDismissible: false,
+      icon: const Icon(
+        Icons.check_circle_outline,
+        color: _appMutedGreen,
+        size: 30,
+      ),
+      title: '명언 신청 완료',
+      message: '관리자 검토 후 등록됩니다.\n신청용 공유 카운트만 0회로 초기화됩니다.',
+      primaryLabel: '확인',
+    );
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    // 기존 완료 후 처리: 전면 광고 노출 요청(설정 화면의 카운트 재조회는 push 복귀 시 수행)
+    widget.onInterstitialRequested();
   }
 }
 
@@ -779,17 +806,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return '없음 / 0개';
   }
 
-  int get _shareTierTarget {
-    if (_shareCount >= 401) return 401;
-    if (_shareCount >= 201) return 400;
-    if (_shareCount >= 51) return 200;
-    if (_shareCount >= 1) return 50;
-    return 1;
-  }
-
+  // 공유 달성도: 명언 신청 조건(30회) 대비 신청용 공유 카운트 진행률(Figma "N / 30")
   int get _shareProgress {
-    final target = _shareTierTarget;
-    return ((_shareCount / target) * 100).clamp(0, 100).toInt();
+    return ((_quoteRequestShareCount / _quoteRequestShareRequirement) * 100)
+        .clamp(0, 100)
+        .toInt();
   }
 
   bool get _hasChangedProfileImage => _profileImageUrl.trim().isNotEmpty;
@@ -1445,15 +1466,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
       initialItem: 6000 + selectedMinute,
     );
 
-    Widget selectionLine({bool fullWidth = false}) {
-      return Align(
+    // Figma: 선택 밑줄은 각 열(오전/오후 110, 시·분 숫자 45) 전체 폭
+    Widget selectionLine() {
+      return const Align(
         alignment: Alignment.bottomCenter,
-        child: FractionallySizedBox(
-          widthFactor: fullWidth ? 1 : 0.58,
-          child: const DecoratedBox(
-            decoration: BoxDecoration(color: _appMutedGreen),
-            child: SizedBox(height: 2),
-          ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: _appMutedGreen),
+          child: SizedBox(height: 2, width: double.infinity),
         ),
       );
     }
@@ -1536,9 +1555,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                   itemExtent: 30,
                                   diameterRatio: 100,
                                   squeeze: 1,
-                                  selectionOverlay: selectionLine(
-                                    fullWidth: true,
-                                  ),
+                                  selectionOverlay: selectionLine(),
                                   childCount: 2,
                                   onSelectedItemChanged: (value) =>
                                       setModalState(
@@ -1580,7 +1597,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 20),
+                                    // Figma: 숫자 ↔ 단위 간격 25
+                                    const SizedBox(width: 25),
                                     const Expanded(
                                       child: Center(
                                         child: Text(
@@ -1621,7 +1639,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 20),
+                                    // Figma: 숫자 ↔ 단위 간격 25
+                                    const SizedBox(width: 25),
                                     const Expanded(
                                       child: Center(
                                         child: Text(
@@ -1727,177 +1746,215 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                // 상단 제목
-                GestureDetector(
-                  key: TutorialTargets.profileTitle,
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    _adminTapCount++;
-                    if (_adminTapCount >= 5) {
-                      _adminTapCount = 0;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AdminPage()),
-                      );
-                    }
-                  },
-                  child: const Row(
-                    children: [
-                      Text(
-                        '프로필 설정',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 30),
-
-                // 프로필 이미지와 월계관
-                GestureDetector(
-                  key: TutorialTargets.profileImage,
-                  onTap: _showProfileImageMenu,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          spreadRadius: 2,
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Stack(
-                      children: [
-                        // 프로필 이미지
-                        Positioned.fill(
-                          child: ClipOval(
-                            child: _profileImageUrl.isNotEmpty
-                                ? Image.network(
-                                    _profileImageUrl,
-                                    key: ValueKey(_profileImageUrl),
-                                    fit: BoxFit.cover,
-                                  )
-                                : Container(
-                                    color: Colors.grey[300],
-                                    child: const Icon(
-                                      Icons.person,
-                                      size: 60,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        // 카메라 아이콘 (편집 힌트)
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: Colors.blue,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                        // 월계관 장식 이미지 사용 대신 아이콘만 표시
-                        // const Positioned(
-                        //   top: -10,
-                        //   left: -10,
-                        //   right: -10,
-                        //   child: SizedBox(
-                        //     height: 40,
-                        //     child: Icon(
-                        //       Icons.emoji_events,
-                        //       color: Colors.amber,
-                        //       size: 30,
-                        //     ),
-                        //   ),
-                        // ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (!_hasChangedProfileImage) ...[
-                  const SizedBox(height: 10),
-                  const Text(
-                    '공유 10회 완료 후 프로필 사진 설정 가능',
+        bottom: false,
+        minimum: const EdgeInsets.only(top: 61),
+        child: Column(
+          children: [
+            GestureDetector(
+              key: TutorialTargets.profileTitle,
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                _adminTapCount++;
+                if (_adminTapCount >= 5) {
+                  _adminTapCount = 0;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminPage()),
+                  );
+                }
+              },
+              child: const SizedBox(
+                height: 43,
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    '나만의 프로필로 힐링 하이를 채워보세요.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Color(0xFFE58B8B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF595959),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                ] else
-                  const SizedBox(height: 40),
-
-                KeyedSubtree(
-                  key: TutorialTargets.profileName,
-                  child: _buildNameEditor(),
                 ),
-                const SizedBox(height: 24),
-
-                _buildNotificationSection(),
-                const SizedBox(height: 24),
-
-                // 언어 선택 필드
-                // _buildLanguageSelector(),
-                // const SizedBox(height: 30),
-
-                // 공유 등급/개 섹션
-                KeyedSubtree(
-                  key: TutorialTargets.profileShareLevel,
-                  child: _buildInfoSection(
-                    title: '공유 등급/개',
-                    value: _shareLevel,
-                    valueColor: Colors.red,
-                    onSearchTap: _showShareLeaderboard,
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // 공유 달성도 섹션
-                KeyedSubtree(
-                  key: TutorialTargets.profileAchievement,
-                  child: _buildAchievementSection(),
-                ),
-
-                // 명언 신청용 공유 카운트가 30회 이상이면 신청 가능
-                const SizedBox(height: 24),
-                if (_quoteRequestShareCount >= _quoteRequestShareRequirement)
-                  _buildQuoteRequestButton()
-                else
-                  _buildAppReviewButton(),
-              ],
+              ),
             ),
-          ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 24),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Column(
+                        children: [
+                          GestureDetector(
+                            key: TutorialTargets.profileImage,
+                            onTap: _showProfileImageMenu,
+                            child: SizedBox(
+                              width: 148,
+                              height: 146,
+                              child: Stack(
+                                children: [
+                                  Positioned.fill(
+                                    child: ClipOval(
+                                      child: _profileImageUrl.isNotEmpty
+                                          ? Image.network(
+                                              _profileImageUrl,
+                                              key: ValueKey(_profileImageUrl),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Stack(
+                                              alignment: Alignment.center,
+                                              children: [
+                                                SvgPicture.asset(
+                                                  'assets/icon/figma_profile_bg.svg',
+                                                  width: 148,
+                                                  height: 146,
+                                                ),
+                                                Image.asset(
+                                                  'assets/icon/figma_profile_plus.png',
+                                                  width: 24.6,
+                                                  height: 24.6,
+                                                ),
+                                              ],
+                                            ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 2,
+                                    right: 0,
+                                    child: Container(
+                                      width: 41,
+                                      height: 41,
+                                      padding: const EdgeInsets.all(5),
+                                      decoration: BoxDecoration(
+                                        color: _appMutedGreen,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white),
+                                      ),
+                                      child: SvgPicture.asset(
+                                        'assets/icon/figma_camera.svg',
+                                        width: 29,
+                                        height: 29,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 37,
+                            child: Center(
+                              child: !_hasChangedProfileImage
+                                  ? const Text(
+                                      '공유 10회 완료 후 프로필 사진 설정 가능',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Color(0xFFD74E44),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w300,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 38),
+                    KeyedSubtree(
+                      key: TutorialTargets.profileName,
+                      child: _buildNameEditor(),
+                    ),
+                    const SizedBox(height: 38),
+                    _buildNotificationSection(),
+                    const SizedBox(height: 38),
+                    KeyedSubtree(
+                      key: TutorialTargets.profileShareLevel,
+                      child: _buildInfoSection(
+                        title: '공유 등급',
+                        value: _shareLevel,
+                        valueColor: const Color(0xFFD74E44),
+                        onSearchTap: _showShareLeaderboard,
+                      ),
+                    ),
+                    const SizedBox(height: 38),
+                    KeyedSubtree(
+                      key: TutorialTargets.profileAchievement,
+                      child: _buildAchievementSection(),
+                    ),
+                    const SizedBox(height: 38),
+                    const Text(
+                      '여러분의 한마디가 더 따뜻한 힐링 하이를 만들어갑니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w300,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    _buildAppReviewButton(),
+                    if (_quoteRequestShareCount >=
+                        _quoteRequestShareRequirement) ...[
+                      const SizedBox(height: 21),
+                      _buildQuoteRequestButton(),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
+  Widget _buildSettingsTitle(
+    String title, {
+    VoidCallback? onHelp,
+    String? tooltip,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                height: 21 / 18,
+                fontWeight: FontWeight.w500,
+                color: Colors.black,
+              ),
+            ),
+          ),
+          if (onHelp != null)
+            IconButton(
+              onPressed: onHelp,
+              tooltip: tooltip,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+              style: IconButton.styleFrom(
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: SvgPicture.asset(
+                'assets/icon/figma_help.svg',
+                width: 20,
+                height: 20,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Figma 시안에 언어 섹션이 없어 화면에는 노출하지 않는다(데이터 흐름 참고용).
+  // ignore: unused_element
   Widget _buildLanguageSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1918,7 +1975,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             borderRadius: BorderRadius.circular(25),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: Colors.grey.withValues(alpha: 0.1),
                 spreadRadius: 1,
                 blurRadius: 4,
                 offset: const Offset(0, 1),
@@ -1970,108 +2027,87 @@ class _MyPageScreenState extends State<MyPageScreen> {
         ? '완료'
         : _isSavingName
         ? '변경 중...'
-        : '변경';
+        : '변경하기';
     final guideText = _isEditingName
         ? '변경하고 싶은 ID 또는 이름을 입력하세요.'
-        : '공유 1회 완료 후 ID 또는 이름 변경 가능';
+        : '공유 1회 완료 후 이름 설정 가능';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'ID 또는 이름',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 8),
+        _buildSettingsTitle('ID 또는 이름'),
+        const SizedBox(height: 11),
         Container(
+          height: 62,
+          padding: const EdgeInsets.only(left: 23, right: 12),
           decoration: BoxDecoration(
-            color: _isEditingName ? Colors.white : Colors.grey[100],
-            borderRadius: BorderRadius.circular(25),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 4,
-                offset: const Offset(0, 1),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(32),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _nameController,
+                  focusNode: _nameFocusNode,
+                  readOnly: !_isEditingName,
+                  keyboardType: TextInputType.text,
+                  textInputAction: TextInputAction.done,
+                  enableInteractiveSelection: _isEditingName,
+                  onSubmitted: (_) => _handleNameAction(),
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: 'ID 또는 이름을 입력하세요',
+                    hintStyle: TextStyle(
+                      color: Color(0xFFBDBDBD),
+                      fontSize: 16,
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              SizedBox(
+                width: 98,
+                height: 40,
+                child: TextButton(
+                  onPressed: isActionEnabled ? _handleNameAction : null,
+                  style: TextButton.styleFrom(
+                    backgroundColor: _appMutedGreen,
+                    foregroundColor: const Color(0xFFF6F4F1),
+                    disabledForegroundColor: const Color(0xFFF6F4F1),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(40),
+                    ),
+                  ),
+                  child: Text(
+                    buttonLabel,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
-          child: TextField(
-            controller: _nameController,
-            focusNode: _nameFocusNode,
-            readOnly: !_isEditingName,
-            keyboardType: TextInputType.text,
-            textInputAction: TextInputAction.done,
-            enableInteractiveSelection: _isEditingName,
-            onSubmitted: (_) => _handleNameAction(),
-            decoration: InputDecoration(
-              hintText: 'ID 또는 이름을 입력하세요',
-              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-              suffixIcon: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  width: 72,
-                  decoration: BoxDecoration(
-                    color: isActionEnabled ? _appMutedGreen : Colors.grey[400],
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: TextButton(
-                    onPressed: isActionEnabled ? _handleNameAction : null,
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: Colors.white,
-                      padding: EdgeInsets.zero,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                    ),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      child: Text(
-                        buttonLabel,
-                        key: ValueKey<String>(buttonLabel),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              suffixIconConstraints: const BoxConstraints(
-                minWidth: 84,
-                minHeight: 52,
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 16,
-              ),
-            ),
-          ),
         ),
-        SizedBox(
-          height: 36,
-          child: Align(
-            alignment: Alignment.center,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Text(
-                guideText,
-                key: ValueKey<String>(guideText),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFFE58B8B),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+        const SizedBox(height: 11),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 21),
+          child: Text(
+            guideText,
+            style: const TextStyle(
+              color: Color(0xFFD74E44),
+              fontSize: 14,
+              height: 17 / 14,
+              fontWeight: FontWeight.w300,
             ),
           ),
         ),
@@ -2161,7 +2197,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return Semantics(
       label: isCurrentUser ? '내 리더보드 순위' : null,
       child: Container(
-        height: 62,
+        // Figma Rank Card: 높이 63
+        height: 63,
         padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -2288,6 +2325,40 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
+  // 바텀시트 상단 힌트(Figma Header: 높이 23, 19px)
+  Widget _buildSheetHeaderHint(String text) {
+    return SizedBox(
+      height: 23,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFCBCBCB),
+              fontSize: 19,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 바텀시트 핸들(Figma close: 48×4)
+  Widget _buildSheetHandle() {
+    return Container(
+      width: 48,
+      height: 4,
+      decoration: BoxDecoration(
+        color: const Color(0xFF757575),
+        borderRadius: BorderRadius.circular(8.5),
+      ),
+    );
+  }
+
   Future<void> _showShareLeaderboard() async {
     final leaderboardFuture = _loadShareLeaderboard();
 
@@ -2301,24 +2372,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         alignment: Alignment.bottomCenter,
         child: Column(
           children: [
-            const SizedBox(
-              height: 23,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 1),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    '위로 올려 더 보기  /  아래로 내려 돌아가기',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0xFFCBCBCB),
-                      fontSize: 19,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            _buildSheetHeaderHint('위로 올려 더 보기 / 아래로 내려 돌아가기'),
             const SizedBox(height: 20),
             Expanded(
               child: Container(
@@ -2335,30 +2389,30 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 ),
                 child: Column(
                   children: [
-                    Container(
-                      width: 48,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF757575),
-                        borderRadius: BorderRadius.circular(8.5),
-                      ),
-                    ),
+                    _buildSheetHandle(),
                     const SizedBox(height: 16),
+                    // Figma Info: 좌우 20(화면 35), 아이콘 컨테이너 73(rank_icon 67)
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
+                        horizontal: 20,
                         vertical: 3,
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Image.asset(
-                            'assets/rank_icon.png',
-                            width: 50,
-                            height: 50,
-                            fit: BoxFit.contain,
+                          SizedBox(
+                            width: 73,
+                            height: 73,
+                            child: Center(
+                              child: Image.asset(
+                                'assets/rank_icon.png',
+                                width: 67,
+                                height: 67,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 9),
                           const Text(
                             '공유 랭킹',
                             style: TextStyle(
@@ -2434,7 +2488,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                         padding: EdgeInsets.zero,
                                         itemCount: entries.length,
                                         separatorBuilder: (_, __) =>
-                                            const SizedBox(height: 18),
+                                            const SizedBox(height: 19),
                                         itemBuilder: (context, index) =>
                                             _buildLeaderboardCard(
                                               entries[index],
@@ -2464,41 +2518,39 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 2),
-          child: Text(
-            '알림 설정',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.black,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
+        SizedBox(height: 19, child: _buildSettingsTitle('알림 설정')),
+        const SizedBox(height: 11),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Expanded(
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 5),
+                padding: EdgeInsets.fromLTRB(22, 8, 0, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '매일 힐링 하이의 명언 알림을 받습니다.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w300,
-                        height: 1.3,
-                        color: Colors.black,
+                    // 좁은 폭에서 "다."만 둘째 줄로 떨어지지 않도록 1줄로 축소 표시
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '매일 힐링 하이의 명언 알림을 받습니다.',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w300,
+                          height: 19 / 16,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
-                    SizedBox(height: 15),
+                    SizedBox(height: 8),
                     Text(
                       '알림 시각',
                       style: TextStyle(
                         fontSize: 16,
+                        height: 19 / 16,
                         fontWeight: FontWeight.w300,
                         color: Colors.black,
                       ),
@@ -2508,27 +2560,66 @@ class _MyPageScreenState extends State<MyPageScreen> {
               ),
             ),
             SizedBox(
-              width: 112,
+              width: 127,
               child: Column(
                 children: [
                   SizedBox(
-                    height: 32,
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      child: Switch.adaptive(
-                        value: _notificationsEnabled,
-                        onChanged: _notificationBusy
+                    width: 65,
+                    height: 27,
+                    child: Semantics(
+                      label: '매일 명언 알림',
+                      toggled: _notificationsEnabled,
+                      child: TextButton(
+                        onPressed: _notificationBusy
                             ? null
-                            : _setNotificationsEnabled,
-                        activeColor: Colors.white,
-                        activeTrackColor: _appMutedGreen,
-                        inactiveThumbColor: Colors.white,
-                        inactiveTrackColor: const Color(0xFFE2E2E2),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            : () => _setNotificationsEnabled(
+                                !_notificationsEnabled,
+                              ),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: const StadiumBorder(),
+                        ),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 65,
+                          height: 27,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 3.6,
+                            vertical: 2.7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _notificationsEnabled
+                                ? _appMutedGreen
+                                : const Color(0xFFE2E2E2),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: AnimatedAlign(
+                            duration: const Duration(milliseconds: 180),
+                            alignment: _notificationsEnabled
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
+                            child: Container(
+                              width: 29,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(99),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x1F000000),
+                                    blurRadius: 2,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 7),
+                  const SizedBox(height: 8),
                   Semantics(
                     button: true,
                     label: '알림 시각 $formattedTime, 변경하려면 두 번 탭하세요',
@@ -2538,7 +2629,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
-                          vertical: 6,
+                          vertical: 0,
                         ),
                         child: AnimatedOpacity(
                           duration: const Duration(milliseconds: 180),
@@ -2548,7 +2639,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w400,
-                              color: Color(0xFF8E8E8E),
+                              height: 19 / 16,
+                              color: Color(0xFFBDBDBD),
                             ),
                           ),
                         ),
@@ -2573,48 +2665,22 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            if (onSearchTap != null) ...[
-              const SizedBox(width: 4),
-              IconButton(
-                onPressed: onSearchTap,
-                tooltip: '공유 리더보드 보기',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.search, size: 19, color: Colors.grey),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
+        _buildSettingsTitle(title, onHelp: onSearchTap, tooltip: '공유 리더보드 보기'),
+        const SizedBox(height: 11),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          height: 62,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: 23, right: 12),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(25),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(32),
           ),
           child: Text(
             value,
             style: TextStyle(
-              fontSize: 14,
-              color: valueColor ?? Colors.black87,
+              fontSize: 21,
+              color: valueColor ?? Colors.black,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -2627,7 +2693,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return SizedBox(
       width: double.infinity,
       height: 52,
-      child: ElevatedButton.icon(
+      child: ElevatedButton(
         onPressed: () async {
           final fallbackName = _deviceId != null
               ? generateNickname(_deviceId!)
@@ -2643,18 +2709,29 @@ class _MyPageScreenState extends State<MyPageScreen> {
           if (!mounted) return;
           await _loadUserData();
         },
-        icon: const Icon(Icons.edit_note, size: 22),
-        label: const Text(
-          '명언 신청',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: _appMutedGreen,
+          backgroundColor: const Color(0xFF538CD2),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: BorderRadius.circular(32),
           ),
-          elevation: 2,
+          elevation: 0,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SvgPicture.asset(
+              'assets/icon/figma_add_note.svg',
+              width: 24,
+              height: 24,
+            ),
+            // Figma: 아이콘 ↔ 텍스트 간격 3
+            const SizedBox(width: 3),
+            const Text(
+              '명언 신청하기',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+            ),
+          ],
         ),
       ),
     );
@@ -2678,24 +2755,41 @@ class _MyPageScreenState extends State<MyPageScreen> {
     }
   }
 
+  // Figma Review: "리뷰 남기기 / 다음에" 2버튼 안내 팝업 후 스토어로 이동
+  Future<void> _showReviewPopup() async {
+    final action = await showAppNoticePopup(
+      context,
+      icon: const Icon(
+        Icons.star_rate_rounded,
+        color: _appMutedGreen,
+        size: 30,
+      ),
+      title: '힐링 하이는 어떠셨나요?',
+      message: '힐링 하이가 도움이 되었다면\n스토어에 리뷰를 남겨 주세요.',
+      primaryLabel: '리뷰 남기기',
+      secondaryLabel: '다음에',
+    );
+    if (!mounted || action != AppNoticeAction.primary) return;
+    await _openStoreReview();
+  }
+
   Widget _buildAppReviewButton() {
     return SizedBox(
       width: double.infinity,
-      height: 52,
-      child: ElevatedButton.icon(
-        onPressed: _openStoreReview,
-        icon: const Icon(Icons.rate_review_outlined, size: 22),
-        label: const Text(
-          '앱 리뷰 작성',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
+      height: 53,
+      child: ElevatedButton(
+        onPressed: _showReviewPopup,
         style: ElevatedButton.styleFrom(
           backgroundColor: _appMutedGreen,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: BorderRadius.circular(32),
           ),
-          elevation: 2,
+          elevation: 0,
+        ),
+        child: const Text(
+          '힐링 하이 리뷰 작성하기',
+          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
         ),
       ),
     );
@@ -3260,146 +3354,60 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
+  // Figma Settings (Ranking Guide): 랭킹 시트와 같은 규격의 바텀시트로 공유 달성도를 안내한다.
+  // (시안의 제목 "공유 랭킹"은 복붙 잔재로 보고 "공유 달성도란?"을 유지)
   Future<void> _showAchievementInfoDialog() async {
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (context) => const _AchievementInfoDialog(),
-    );
-  }
-
-  Widget _buildAchievementSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.82,
+        alignment: Alignment.bottomCenter,
+        child: Column(
           children: [
-            const Text(
-              '공유 달성도',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _showAchievementInfoDialog,
-              child: const Icon(
-                Icons.help_outline,
-                color: Colors.grey,
-                size: 16,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(25),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 진행률 표시
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '$_shareCount/$_shareTierTarget',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  Text(
-                    '$_shareProgress%',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // 진행바
-              Container(
-                height: 8,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(4),
+            _buildSheetHeaderHint('아래로 내려 돌아가기'),
+            const SizedBox(height: 20),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.fromLTRB(
+                  15,
+                  19,
+                  15,
+                  19 + MediaQuery.paddingOf(context).bottom,
                 ),
-                child: Row(
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF6F4F1),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+                ),
+                child: Column(
                   children: [
-                    Expanded(
-                      flex: _shareProgress,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: _appMutedGreen,
-                          borderRadius: BorderRadius.circular(4),
+                    _buildSheetHandle(),
+                    const SizedBox(height: 16),
+                    // Figma Info: 높이 33(상하 3), 제목 중앙
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 3),
+                      child: SizedBox(
+                        height: 27,
+                        child: Center(
+                          child: Text(
+                            '공유 달성도란?',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    Expanded(flex: 100 - _shareProgress, child: Container()),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AchievementInfoDialog extends StatelessWidget {
-  const _AchievementInfoDialog();
-
-  static const double _designWidth = 330;
-  static const double _designHeight = 497;
-
-  @override
-  Widget build(BuildContext context) {
-    final availableWidth = MediaQuery.sizeOf(context).width - 48;
-    final dialogWidth = availableWidth.clamp(0.0, _designWidth);
-    final scale = dialogWidth / _designWidth;
-
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      child: SizedBox(
-        width: dialogWidth,
-        height: _designHeight * scale,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12 * scale),
-          child: FittedBox(
-            fit: BoxFit.fill,
-            child: SizedBox(
-              width: _designWidth,
-              height: _designHeight,
-              child: ColoredBox(
-                color: const Color(0xFFF6F4F1),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      left: 29,
-                      top: 42,
-                      width: 271,
-                      height: 128,
+                    const SizedBox(height: 19),
+                    // Figma share_illust: 309×146 중앙
+                    SizedBox(
+                      width: 309,
+                      height: 146,
                       child: ClipRect(
                         child: Image.asset(
                           'assets/share_illust.png',
@@ -3408,78 +3416,39 @@ class _AchievementInfoDialog extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const Positioned(
-                      left: 0,
-                      right: 0,
-                      top: 192,
-                      child: Text(
-                        '공유 달성도란?',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                    const SizedBox(height: 19),
+                    // Figma 본문 박스: 409×412(좌우 15), 내부 25/10, 버튼 없음
+                    Flexible(
+                      child: Container(
+                        width: double.infinity,
+                        height: 412,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 25,
+                          vertical: 10,
                         ),
-                      ),
-                    ),
-                    const Positioned(
-                      left: 16,
-                      right: 16,
-                      top: 234,
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text:
-                                  '명언을 공유할 때마다\n'
-                                  '공유 달성도가 차곡차곡 올라가요.\n\n'
-                                  '달성도 ',
-                            ),
-                            TextSpan(
-                              text: '100%',
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE3EAE3),
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        child: const Center(
+                          child: SingleChildScrollView(
+                            child: Text(
+                              '명언을 공유할 때마다\n'
+                              '공유 달성도가 차곡차곡 올라가요.\n\n'
+                              '달성도를 모두 채우면\n'
+                              '원하는 명언을 제작자에게 직접 신청할 수 있어요.\n\n'
+                              '신청한 명언은 제작자의 확인 후\n'
+                              '힐링 하이에 소개될 수 있어요.\n\n'
+                              '여러분의 공유가\n'
+                              '힐링 하이에 새로운 문장을 더해요.',
+                              textAlign: TextAlign.center,
                               style: TextStyle(
-                                color: _appMutedGreen,
-                                fontWeight: FontWeight.w800,
+                                color: Colors.black,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                height: 1.6,
                               ),
                             ),
-                            TextSpan(
-                              text:
-                                  '를 채우면,\n'
-                                  '원하는 명언을 제작자에게 신청할 수 있어요.\n\n'
-                                  '신청한 명언은 제작자 확인 후\n'
-                                  '힐링 하이에 소개될 수 있어요.',
-                            ),
-                          ],
-                        ),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w400,
-                          height: 1.2,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 30,
-                      top: 417,
-                      width: 269,
-                      height: 53,
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _appMutedGreen,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(32),
-                          ),
-                        ),
-                        child: const Text(
-                          '확인했어요',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
@@ -3488,9 +3457,85 @@ class _AchievementInfoDialog extends StatelessWidget {
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildAchievementSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSettingsTitle(
+          '공유 달성도',
+          onHelp: _showAchievementInfoDialog,
+          tooltip: '공유 달성도 안내',
+        ),
+        const SizedBox(height: 11),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(32),
+          ),
+          child: Semantics(
+            label: '공유 달성도',
+            value: '$_shareProgress%',
+            child: SizedBox(
+              height: 18,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(32),
+                    child: LinearProgressIndicator(
+                      value: _shareProgress / 100,
+                      minHeight: 18,
+                      backgroundColor: const Color(0xFFEEEEEE),
+                      color: _appMutedGreen,
+                    ),
+                  ),
+                  Text(
+                    '$_quoteRequestShareCount / $_quoteRequestShareRequirement',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                      color: _shareProgress >= 55
+                          ? Colors.white
+                          : const Color(0xFF527455),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Figma 카테고리 Select 화살표(12×8, 아래 방향 삼각형)
+class _DropdownTrianglePainter extends CustomPainter {
+  const _DropdownTrianglePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DropdownTrianglePainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
