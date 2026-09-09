@@ -378,6 +378,7 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
   late final Animation<double> _heartScale;
   late final Animation<Offset> _slideAnimation;
   late final Animation<double> _fadeAnimation;
+  late final Animation<double> _collapseAnimation;
   bool _isRemoving = false;
 
   @override
@@ -394,19 +395,27 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
       TweenSequenceItem(tween: Tween(begin: 1.35, end: 0.0), weight: 80),
     ]).animate(CurvedAnimation(parent: _heartController, curve: Curves.easeIn));
 
-    // 카드 슬라이드 + 페이드 애니메이션
+    // 카드 숨김 애니메이션: 오른쪽 슬라이드 + 페이드(0~65%) 뒤에
+    // 높이 접힘(45~100%)이 겹쳐 이어져, 아래 카드가 튀지 않고 올라온다.
     _slideController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 480),
+    );
+    final slideCurve = CurvedAnimation(
+      parent: _slideController,
+      curve: const Interval(0.0, 0.65, curve: Curves.easeIn),
     );
     _slideAnimation = Tween<Offset>(
       begin: Offset.zero,
       end: const Offset(1.5, 0),
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeIn));
-    _fadeAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeIn));
+    ).animate(slideCurve);
+    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(slideCurve);
+    _collapseAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _slideController,
+        curve: const Interval(0.45, 1.0, curve: Curves.easeInOut),
+      ),
+    );
   }
 
   @override
@@ -427,7 +436,7 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
     // 하트 축소 애니메이션
     await _heartController.forward();
 
-    // 카드 오른쪽 슬라이드 애니메이션
+    // 카드 오른쪽 슬라이드 → 높이 접힘 애니메이션
     await _slideController.forward();
 
     // 리스트에서 제거
@@ -436,161 +445,166 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
 
   @override
   Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 18),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(25),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 상단: 프로필 이미지 + 저자명
-              Row(
-                children: [
-                  ClipOval(
-                    child: Container(
-                      width: 50,
-                      height: 50,
-                      color: Colors.grey[200],
-                      child: widget.requestImageUrl != null
-                          ? Image.network(
-                              widget.requestImageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(
-                                    Icons.person,
-                                    size: 20,
-                                    color: Colors.grey[400],
-                                  ),
-                            )
-                          : widget.resonerImagePath != null
-                          ? Image.asset(
-                              widget.resonerImagePath!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(
-                                    Icons.person,
-                                    size: 20,
-                                    color: Colors.grey[400],
-                                  ),
-                            )
-                          : Icon(
-                              Icons.person,
-                              size: 20,
-                              color: Colors.grey[400],
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black,
+    // SizeTransition이 하단 margin까지 포함해 접으므로 카드 간격도 함께 사라진다.
+    return SizeTransition(
+      sizeFactor: _collapseAnimation,
+      axisAlignment: -1.0,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 상단: 프로필 이미지 + 저자명
+                Row(
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        color: Colors.grey[200],
+                        child: widget.requestImageUrl != null
+                            ? Image.network(
+                                widget.requestImageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.grey[400],
+                                    ),
+                              )
+                            : widget.resonerImagePath != null
+                            ? Image.asset(
+                                widget.resonerImagePath!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.grey[400],
+                                    ),
+                              )
+                            : Icon(
+                                Icons.person,
+                                size: 20,
+                                color: Colors.grey[400],
+                              ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              // 명언 텍스트
-              Text(
-                widget.content,
-                textAlign: TextAlign.left,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w300,
-                  color: Color(0xFF414141),
-                  height: 25 / 18,
-                  letterSpacing: -0.36,
-                ),
-              ),
-              const SizedBox(height: 18),
-              // 하단: 태그 + 좋아요/공유 버튼
-              Row(
-                children: [
-                  // 태그
-                  if (widget.tag != null && widget.tag!.isNotEmpty)
-                    Container(
-                      height: 32,
-                      alignment: Alignment.center,
-                      // Figma Tag BG: 텍스트 좌 9 / 우 11, 높이 32의 완전한 필 형태
-                      padding: const EdgeInsets.only(left: 9, right: 11),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F5F5),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                    const SizedBox(width: 15),
+                    Expanded(
                       child: Text(
-                        '# ${widget.tag}',
+                        widget.title,
                         style: const TextStyle(
-                          fontSize: 16,
-                          color: Color(0xFF9E9E9E),
-                          fontWeight: FontWeight.w400,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black,
                         ),
                       ),
                     ),
-                  const Spacer(),
-                  // 하트 버튼 (커스텀 애니메이션)
-                  GestureDetector(
-                    key: widget.isTutorialTarget
-                        ? TutorialTargets.bookmarkLike
-                        : null,
-                    onTap: _isRemoving ? null : _handleUnlike,
-                    child: AnimatedBuilder(
-                      animation: _heartScale,
-                      builder: (context, child) {
-                        return Transform.scale(
-                          scale: _heartScale.value,
-                          child: child,
-                        );
-                      },
-                      child: SvgPicture.asset(
-                        'assets/icon/figma_saved_heart.svg',
-                        width: 23,
-                        height: 19,
+                  ],
+                ),
+                const SizedBox(height: 18),
+                // 명언 텍스트
+                Text(
+                  widget.content,
+                  textAlign: TextAlign.left,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w300,
+                    color: Color(0xFF414141),
+                    height: 25 / 18,
+                    letterSpacing: -0.36,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                // 하단: 태그 + 좋아요/공유 버튼
+                Row(
+                  children: [
+                    // 태그
+                    if (widget.tag != null && widget.tag!.isNotEmpty)
+                      Container(
+                        height: 32,
+                        alignment: Alignment.center,
+                        // Figma Tag BG: 텍스트 좌 9 / 우 11, 높이 32의 완전한 필 형태
+                        padding: const EdgeInsets.only(left: 9, right: 11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          '# ${widget.tag}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFF9E9E9E),
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    // 하트 버튼 (커스텀 애니메이션)
+                    GestureDetector(
+                      key: widget.isTutorialTarget
+                          ? TutorialTargets.bookmarkLike
+                          : null,
+                      onTap: _isRemoving ? null : _handleUnlike,
+                      child: AnimatedBuilder(
+                        animation: _heartScale,
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: _heartScale.value,
+                            child: child,
+                          );
+                        },
+                        child: SvgPicture.asset(
+                          'assets/icon/figma_saved_heart.svg',
+                          width: 23,
+                          height: 19,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 70),
-                  // 공유 버튼
-                  IconButton(
-                    onPressed: () => widget.onShare(
-                      widget.title,
-                      widget.content,
-                      widget.requestImageUrl != null
-                          ? NetworkImage(widget.requestImageUrl!)
-                          : widget.resonerImagePath != null
-                          ? AssetImage(widget.resonerImagePath!)
-                          : null,
+                    const SizedBox(width: 70),
+                    // 공유 버튼
+                    IconButton(
+                      onPressed: () => widget.onShare(
+                        widget.title,
+                        widget.content,
+                        widget.requestImageUrl != null
+                            ? NetworkImage(widget.requestImageUrl!)
+                            : widget.resonerImagePath != null
+                            ? AssetImage(widget.resonerImagePath!)
+                            : null,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 18,
+                        height: 20,
+                      ),
+                      style: IconButton.styleFrom(
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: SvgPicture.asset(
+                        'assets/icon/figma_card_share.svg',
+                        width: 18,
+                        height: 20,
+                      ),
+                      tooltip: '공유하기',
                     ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 18,
-                      height: 20,
-                    ),
-                    style: IconButton.styleFrom(
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: SvgPicture.asset(
-                      'assets/icon/figma_card_share.svg',
-                      width: 18,
-                      height: 20,
-                    ),
-                    tooltip: '공유하기',
-                  ),
-                  const SizedBox(width: 19),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 19),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
