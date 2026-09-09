@@ -183,8 +183,9 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   static const int _navSwitchFrequency = 10;
 
-  // 하단 바: 아이콘+라벨 영역 46, 시스템 인셋 최소 34 → 기준 기기에서 총 80(Figma)
-  static const double _navContentHeight = 46;
+  // 하단 바: 아이콘+라벨 영역 52(Figma 46에서 여유를 두어 6 확대), 시스템 인셋 최소 34
+  // → 기준 기기에서 총 86
+  static const double _navContentHeight = 52;
   static const double _navMinBottomInset = 34;
 
   int _currentIndex = 0;
@@ -332,8 +333,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return 3;
       case TutorialSection.search:
       case TutorialSection.bookmarks:
-      case TutorialSection.profile:
         return 2;
+      case TutorialSection.profile:
+        return 3;
     }
   }
 
@@ -372,23 +374,27 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     const activeGreen = Color(0xFF81A684); // 활성화 시 진한 녹색
     const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
-    final navBottomInset = math.max(
-      _navMinBottomInset,
-      MediaQuery.paddingOf(context).bottom,
-    );
+    // 실제 시스템 하단 인셋. 총 높이 계산에는 최소 34를 보장하지만, 아이콘 아래
+    // 패딩은 실제 인셋만큼만 준다. 인셋이 34보다 작은 기기(3버튼 바가 앱 창 밖에
+    // 있어 인셋 0인 경우 등)에서 남는 공간이 아이콘 위아래로 균등 분배되어
+    // 아이콘·라벨이 보이는 영역의 세로 가운데에 놓인다.
+    final systemBottomInset = MediaQuery.paddingOf(context).bottom;
+    final navBottomInset = math.max(_navMinBottomInset, systemBottomInset);
 
     return Stack(
       children: [
         Scaffold(
           body: _buildCurrentScreen(),
           // Figma Bottom Navigation(h 80)은 iPhone 홈 인디케이터 34를 포함한 높이다.
-          // 아이콘·라벨은 위쪽 46에 두고, 그 아래를 시스템 하단 인셋(최소 34)으로 채운다.
+          // 총 높이는 _navContentHeight(52, Figma 46보다 6 여유) + 하단 인셋(최소 34).
+          // 아래쪽은 실제 시스템 인셋만큼만 비우고, 남은 영역 전체에서 아이콘·라벨을
+          // 세로 가운데 정렬한다(Column의 mainAxisAlignment.center).
           // Scaffold는 bottomNavigationBar에 하단 인셋을 넣어주지 않으므로 직접 처리한다.
           bottomNavigationBar: Container(
             key: TutorialTargets.bottomNavBar,
             height: _navContentHeight + navBottomInset,
             color: const Color(0xFFF8F9FE),
-            padding: EdgeInsets.fromLTRB(11, 0, 11, navBottomInset),
+            padding: EdgeInsets.fromLTRB(11, 0, 11, systemBottomInset),
             child: Row(
               children: [
                 _buildNavigationItem(
@@ -499,8 +505,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               SizedBox(height: iconGap),
               Text(
                 label,
+                // 기본 줄 높이(약 17px)로는 아이콘(최대 27) + 간격과 함께
+                // _navContentHeight(46)를 1~3px 넘친다. 줄 높이를 폰트 크기에
+                // 맞춰 46 안에 들어오게 한다.
                 style: TextStyle(
                   fontSize: 12,
+                  height: 1.0,
                   fontWeight: FontWeight.w700,
                   color: color,
                 ),

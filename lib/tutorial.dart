@@ -10,7 +10,7 @@ enum TutorialSection {
   home('home_v1'),
   search('search_v1'),
   bookmarks('bookmarks_v1'),
-  profile('profile_v1');
+  profile('profile_v2');
 
   const TutorialSection(this.storageKey);
 
@@ -37,6 +37,10 @@ class TutorialTargets {
   );
   static final profileAchievement = GlobalKey(
     debugLabel: 'tutorial_profile_achievement',
+  );
+  // 공유 등급 제목 옆 도움말 아이콘. 탭하면 공유 랭킹 시트가 열린다.
+  static final profileLeaderboard = GlobalKey(
+    debugLabel: 'tutorial_profile_leaderboard',
   );
 }
 
@@ -586,8 +590,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
     case TutorialSection.profile:
       return <_TutorialStep>[
         _TutorialStep(
-          title: '개인 프로필을 설정해보세요.',
-          description: '프로필 사진, 이름, 언어를 나에게 맞게 설정할 수 있어요.',
+          title: '프로필을 설정해 보세요.',
+          description: '공유 횟수 조건을 달성하면 나만의 프로필을 설정할 수 있어요.',
           targetKeys: <GlobalKey>[
             TutorialTargets.profileTitle,
             TutorialTargets.profileImage,
@@ -601,7 +605,7 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
         ),
         _TutorialStep(
           title: '나의 공유 활동을 확인해요.',
-          description: '공유 횟수에 따라 등급이 올라가고 진행 상황을 확인할 수 있어요.',
+          description: '내가 공유한 횟수와 다음 등급까지의 진행 상황을 확인할 수 있어요.',
           targetKeys: <GlobalKey>[
             TutorialTargets.profileShareLevel,
             TutorialTargets.profileAchievement,
@@ -611,6 +615,16 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           targetPadding: 4,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 16, size, safeTop),
+        ),
+        _TutorialStep(
+          title: '함께 나누는 사람들을 만나보세요.',
+          description: '다른 사람들의 공유 활동을 확인하고, 함께 더 많은 명언을 나눠보세요.',
+          targetKeys: <GlobalKey>[TutorialTargets.profileLeaderboard],
+          fallbackTarget: (size, safeTop) =>
+              Rect.fromLTWH(size.width - 56, safeTop + 345, 20, 20),
+          targetPadding: 10,
+          calloutTop: (size, safeTop, target) =>
+              _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
       ];
   }

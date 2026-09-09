@@ -1883,6 +1883,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         value: _shareLevel,
                         valueColor: const Color(0xFFD74E44),
                         onSearchTap: _showShareLeaderboard,
+                        searchKey: TutorialTargets.profileLeaderboard,
                       ),
                     ),
                     const SizedBox(height: 38),
@@ -1920,6 +1921,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     String title, {
     VoidCallback? onHelp,
     String? tooltip,
+    Key? helpKey,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1938,6 +1940,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           ),
           if (onHelp != null)
             IconButton(
+              key: helpKey,
               onPressed: onHelp,
               tooltip: tooltip,
               padding: EdgeInsets.zero,
@@ -2034,6 +2037,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
         : '변경하기';
     final guideText = _isEditingName
         ? '변경하고 싶은 ID 또는 이름을 입력하세요.'
+        : canChangeName
+        ? null
         : '공유 1회 완료 후 이름 설정 가능';
 
     return Column(
@@ -2102,19 +2107,21 @@ class _MyPageScreenState extends State<MyPageScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 11),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 21),
-          child: Text(
-            guideText,
-            style: const TextStyle(
-              color: Color(0xFFD74E44),
-              fontSize: 14,
-              height: 17 / 14,
-              fontWeight: FontWeight.w300,
+        if (guideText != null) ...[
+          const SizedBox(height: 11),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 21),
+            child: Text(
+              guideText,
+              style: const TextStyle(
+                color: Color(0xFFD74E44),
+                fontSize: 14,
+                height: 17 / 14,
+                fontWeight: FontWeight.w300,
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -2161,7 +2168,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
     return ClipOval(
       child: Image.network(
-        _withCacheBuster(imageUrl),
+        imageUrl,
         width: 41,
         height: 41,
         fit: BoxFit.cover,
@@ -2208,7 +2215,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
           children: [
             _buildLeaderboardRank(rank),
             const SizedBox(width: 25),
-            _buildLeaderboardProfile(entry['profileImageUrl'] as String),
+            // 내 사진은 저장/삭제 직후의 설정 상태를 사용한다.
+            // 구버전 랭킹 RPC는 profile_image_url을 반환하지 않을 수 있다.
+            _buildLeaderboardProfile(
+              isCurrentUser
+                  ? _profileImageUrl
+                  : entry['profileImageUrl'] as String,
+            ),
             const SizedBox(width: 25),
             Expanded(
               child: Text(
@@ -2661,11 +2674,17 @@ class _MyPageScreenState extends State<MyPageScreen> {
     required String value,
     Color? valueColor,
     VoidCallback? onSearchTap,
+    Key? searchKey,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSettingsTitle(title, onHelp: onSearchTap, tooltip: '공유 리더보드 보기'),
+        _buildSettingsTitle(
+          title,
+          onHelp: onSearchTap,
+          tooltip: '공유 리더보드 보기',
+          helpKey: searchKey,
+        ),
         const SizedBox(height: 11),
         Container(
           width: double.infinity,
@@ -2759,10 +2778,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
   Future<void> _showReviewPopup() async {
     final action = await showAppNoticePopup(
       context,
-      icon: const Icon(
-        Icons.star_rate_rounded,
-        color: _appMutedGreen,
-        size: 30,
+      icon: Image.asset(
+        'assets/icon/review_store.png',
+        width: 30,
+        height: 30,
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
       ),
       title: '힐링 하이는 어떠셨나요?',
       message: '힐링 하이가 도움이 되었다면\n스토어에 리뷰를 남겨 주세요.',

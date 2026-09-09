@@ -52,7 +52,7 @@ void main() {
                 const Positioned.fill(child: SizedBox.expand()),
                 TutorialOverlay(
                   section: TutorialSection.profile,
-                  stepIndex: 1,
+                  stepIndex: 2,
                   onNext: () {},
                   onSkip: () {},
                 ),
@@ -63,7 +63,7 @@ void main() {
       ),
     );
 
-    expect(find.text('나의 공유 활동을 확인해요.'), findsOneWidget);
+    expect(find.text('함께 나누는 사람들을 만나보세요.'), findsOneWidget);
     expect(find.text('확인'), findsOneWidget);
   });
 
