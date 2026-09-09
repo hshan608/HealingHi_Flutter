@@ -10,7 +10,9 @@ import 'dart:math';
 import 'ad_helper.dart';
 import 'installation_identity.dart';
 import 'quote_share.dart';
+import 'responsive.dart';
 import 'resoner_image_helper.dart';
+import 'typographic_quotes.dart';
 import 'tutorial.dart';
 import 'app_popup.dart';
 
@@ -183,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
           size: 30,
         ),
         title: '신청한 명언이 추가 됐어요!',
-        message: '신청하신 명언이 힐링 하이에 소개되었어요.\n홈에서 "내가 신청한 명언" 배지로 확인해 보세요.',
+        message: '신청하신 명언이 힐링 하이에 소개되었어요.\n홈에서 “내가 신청한 명언” 배지로 확인해 보세요.',
         primaryLabel: '확인',
       );
       await prefs.setStringList(
@@ -475,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
           await Clipboard.setData(
             ClipboardData(
               text:
-                  '"$content" ─ $title\n'
+                  '“$content” ─ $title\n'
                   '당신의 하루에 머무는 한마디, 힐링하이\n'
                   '(앱 링크)',
             ),
@@ -710,7 +712,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final quoteId = _extractQuoteId(quote);
         return _buildContentBox(
           '${quote['resoner_kr']}',
-          quote['text_kr'],
+          toTypographicQuotes(quote['text_kr']?.toString() ?? ''),
           quoteId,
           quote['tag_kr']?.toString(),
           quote['imagefile']?.toString(),
@@ -813,12 +815,18 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
   @override
   Widget build(BuildContext context) {
     if (!_isLoaded || _bannerAd == null) return const SizedBox.shrink();
+    // 광고는 규격 크기(320×50)를 그대로 유지해야 하므로 앱 전체 비율 스케일에서 제외한다.
     return Container(
       margin: const EdgeInsets.only(bottom: 16.0),
       alignment: Alignment.center,
-      width: _bannerAd!.size.width.toDouble(),
-      height: _bannerAd!.size.height.toDouble(),
-      child: AdWidget(ad: _bannerAd!),
+      child: AppScale.unscaled(
+        context,
+        size: Size(
+          _bannerAd!.size.width.toDouble(),
+          _bannerAd!.size.height.toDouble(),
+        ),
+        child: AdWidget(ad: _bannerAd!),
+      ),
     );
   }
 }

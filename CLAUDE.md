@@ -64,8 +64,21 @@ dart format lib/            # `flutter format`은 제거된 명령이다
 | `quote_share.dart` | 명언 카드 이미지 캡처·공유 공용 로직(`QuoteShare`, `QuoteShareCard`). 홈·보관함이 함께 사용 |
 | `app_popup.dart` | Figma 400×241 공용 안내 팝업(`AppNoticePopup`, `showAppNoticePopup`). 신청 완료·리뷰 확인·신청 승인 알림에 사용 |
 | `ad_helper.dart`, `nickname_generator.dart` | AdMob 유닛 ID, 결정적 닉네임 생성 |
+| `rank_medal.dart` | `AnimatedRankMedal` — 공유 랭킹 1~3위 메달(`assets/{n}_rank.png`) 흔들림 애니메이션. `disableAnimations`면 정지 이미지 |
+| `image_mime.dart` | 업로드 이미지 확장자 → 표준 MIME 변환(`ImageMime`). Storage 업로드의 `contentType`은 반드시 이걸로 만든다 |
+| `responsive.dart` | `AppScale` — 앱 루트 비율 스케일(아래 "반응형 스케일" 절) |
 
 상태 관리는 `StatefulWidget` + `setState()`뿐이며 외부 라이브러리를 쓰지 않는다.
+
+### 반응형 스케일 — 화면 코드는 고정 px, 확대·축소는 루트에서 한 번
+
+화면 코드는 Figma(440×956) px 값을 그대로 쓰고, 검수는 Pixel 9 에뮬레이터(411.4dp 폭)에서 했다. `MaterialApp.builder`에 걸린 `AppScale`(`responsive.dart`)이 **기기 짧은 변 ÷ 411.4** 배율로 전체 트리를 `Transform.scale`하고, `MediaQuery`의 size / padding / viewInsets를 같은 배율로 나눠 덮어쓴다. 그래서:
+
+- 새 화면을 만들 때도 `.w` / `.sp` 같은 변환 없이 **에뮬레이터 기준 px를 그대로 적는다.** 기준 기기에서는 배율이 정확히 1.0이라 변환이 생략된다.
+- 배율은 0.7~1.4로 제한된다. 구형 소형 폰·태블릿에서 남는 공간은 기존 `Expanded` 등 유연 레이아웃이 채운다.
+- **실제 px 크기가 고정돼야 하는 위젯은 `AppScale.unscaled()`로 감싼다.** 현재 홈 배너 광고(`_BannerAdWidget`)가 유일한 예다. 광고를 새로 넣을 때도 같은 처리를 해야 AdMob 규격 크기가 유지된다.
+- `RepaintBoundary.toImage`(공유 카드 캡처)와 튜토리얼의 `localToGlobal` → `globalToLocal` 측정은 스케일 안팎을 왕복하므로 영향을 받지 않는다. 단, `localToGlobal` 결과를 화면 픽셀로 직접 쓰는 코드를 새로 넣으면 배율만큼 어긋난다.
+- 기준 기기를 바꾸려면 `AppScale.referenceWidth` 한 곳만 고친다. `test/responsive_test.dart`가 배율·인셋·히트 테스트·기준 기기 1.0 동작을 고정한다.
 
 ### 설치 식별 — 모든 데이터 접근의 전제
 
@@ -105,7 +118,7 @@ RPC를 거쳐야 하는 작업:
 
 관리자 인증은 상태를 서버에 두지 않는다. `private.check_admin_password()`가 호출마다 검증하고, 설치 ID 단위로 5회 실패 시 15분 잠금한다. 클라이언트는 비밀번호를 `_AdminPageState._authenticatedPassword`(static, 메모리 전용)에 들고 매 RPC마다 다시 보낸다.
 
-Storage는 `avatars` 버킷 하나를 쓰고 경로 규칙이 정책에 하드코딩되어 있다 — `profiles/{설치ID}.{ext}`, `quote_requests/{설치ID}/{신청ID}.{ext}`. 경로 형식을 바꾸면 RLS가 업로드를 거부한다.
+Storage는 `avatars` 버킷 하나를 쓰고 경로 규칙이 정책에 하드코딩되어 있다 — `profiles/{설치ID}.{ext}`, `quote_requests/{설치ID}/{신청ID}.{ext}`. 경로 형식을 바꾸면 RLS가 업로드를 거부한다. 버킷의 `allowed_mime_types`는 표준 MIME(`image/jpeg` 등)만 허용하므로 `contentType`을 `'image/$ext'`로 조합하면 `.jpg` 파일이 415로 거절된다. `ImageMime.fromExtension()`을 써야 한다.
 
 ### 마이그레이션 운영
 
@@ -130,7 +143,7 @@ MCP 서버는 세션마다 인증이 필요하다. 인증 전에는 DB 스키마
 | 프로필 사진 설정 | `share_count >= 10` | `_pickAndUploadImage()` |
 | 명언 신청 | `quote_request_share_count >= 30` | `submit_quote_request()`에서 서버 검증 |
 
-등급 구간은 `_shareLevel`에 있다(1 / 51 / 201 / 401 → 입문 / 중급 / 고수 / 챔피언). 설정 탭의 "공유 달성도" 막대는 등급이 아니라 `quote_request_share_count / 30`(명언 신청 조건)을 표시한다.
+등급 구간은 `_shareLevel`과 `_nextShareTier`에 중복 정의되어 있다(1 / 50 / 200 / 400 → 입문 / 중급 / 고수 / 챔피언, 함께 고쳐야 한다). 설정 탭의 "공유 달성도" 막대는 등급이 아니라 `quote_request_share_count / 30`(명언 신청 조건)을 표시한다.
 
 카운트 증가는 **공유가 실제 성공했을 때만** 한다 — `Share.shareXFiles()`의 `ShareResultStatus.success`를 확인한 뒤 `increment_share_count`를 호출한다. 클립보드 폴백 경로에서는 증가시키지 않는다.
 
@@ -156,6 +169,7 @@ MCP 서버는 세션마다 인증이 필요하다. 인증 전에는 DB 스키마
 
 - 진행 상태는 `users.tutorial_progress`(jsonb)에 `TutorialSection.storageKey`(`home_v1` 등) 단위로 저장된다. 내용을 개편하면 키 버전을 올려 다시 노출시킨다.
 - 강조 영역은 `TutorialTargets`의 `GlobalKey`로 실제 위젯 위치를 측정해 그린다. 대상 위젯을 옮기거나 키를 떼면 하드코딩된 `fallbackTarget` 사각형으로 떨어진다.
+- 단계에 `boundsKey`를 주면 패딩까지 포함한 강조 영역이 그 위젯 사각형 안으로 잘린다. 보관함 탭 단계가 `TutorialTargets.bottomNavBar`(하단 바 컨테이너)를 경계로 써서 본문 쪽으로 침범하지 않는다.
 - **단계 수가 두 곳에 중복 정의되어 있다** — `main.dart`의 `_tutorialStepCount()`와 `tutorial.dart`의 `_stepsFor()`. 단계를 추가·삭제할 때 둘을 함께 고쳐야 하며, 어긋나면 마지막 단계가 잘리거나 진행이 멈춘다.
 
 ### 저자 이미지

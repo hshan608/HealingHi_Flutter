@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'home_page.dart';
 import 'ad_helper.dart';
 import 'search_page.dart';
@@ -12,7 +13,9 @@ import 'like_page.dart';
 import 'setting_page.dart';
 import 'tutorial.dart';
 import 'installation_identity.dart';
+import 'typographic_quotes.dart';
 import 'notification_service.dart';
+import 'responsive.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -47,7 +50,7 @@ class WidgetDataManager {
       final quotes = response.map((quote) {
         return {
           'id': quote['id']?.toString() ?? '',
-          'text_kr': quote['text_kr'] ?? '',
+          'text_kr': toTypographicQuotes(quote['text_kr']?.toString() ?? ''),
           'resoner_kr': quote['resoner_kr'] ?? '알 수 없음',
         };
       }).toList();
@@ -163,6 +166,8 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Pretendard',
       ),
+      // Pixel 9 에뮬레이터(411.4dp) 기준 레이아웃을 기기 폭에 비례해 확대·축소한다(responsive.dart).
+      builder: (context, child) => AppScale(child: child!),
       home: const MainScreen(),
     );
   }
@@ -177,6 +182,10 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   static const int _navSwitchFrequency = 10;
+
+  // 하단 바: 아이콘+라벨 영역 46, 시스템 인셋 최소 34 → 기준 기기에서 총 80(Figma)
+  static const double _navContentHeight = 46;
+  static const double _navMinBottomInset = 34;
 
   int _currentIndex = 0;
   int _navSwitchCount = 0; // 탭 전환 횟수
@@ -363,15 +372,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     const activeGreen = Color(0xFF81A684); // 활성화 시 진한 녹색
     const inactiveGrey = Color(0xFFBDBDBD); // 비활성화 시 회색
+    final navBottomInset = math.max(
+      _navMinBottomInset,
+      MediaQuery.paddingOf(context).bottom,
+    );
 
     return Stack(
       children: [
         Scaffold(
           body: _buildCurrentScreen(),
+          // Figma Bottom Navigation(h 80)은 iPhone 홈 인디케이터 34를 포함한 높이다.
+          // 아이콘·라벨은 위쪽 46에 두고, 그 아래를 시스템 하단 인셋(최소 34)으로 채운다.
+          // Scaffold는 bottomNavigationBar에 하단 인셋을 넣어주지 않으므로 직접 처리한다.
           bottomNavigationBar: Container(
-            height: 80,
+            key: TutorialTargets.bottomNavBar,
+            height: _navContentHeight + navBottomInset,
             color: const Color(0xFFF8F9FE),
-            padding: const EdgeInsets.symmetric(horizontal: 11),
+            padding: EdgeInsets.fromLTRB(11, 0, 11, navBottomInset),
             child: Row(
               children: [
                 _buildNavigationItem(

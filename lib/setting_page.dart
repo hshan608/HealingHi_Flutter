@@ -9,11 +9,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:typed_data';
 import 'dart:io';
 import 'installation_identity.dart';
+import 'rank_medal.dart';
 import 'nickname_generator.dart';
 import 'notification_service.dart';
 import 'admin_page.dart';
 import 'tutorial.dart';
 import 'app_popup.dart';
+import 'image_mime.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -200,7 +202,7 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
       if (_selectedImage != null) {
         try {
           final bytes = await File(_selectedImage!.path).readAsBytes();
-          final fileExt = _selectedImage!.path.split('.').last;
+          final fileExt = ImageMime.extensionOf(_selectedImage!.path);
           final filePath =
               'quote_requests/${InstallationIdentity.id}/$requestQuoteId.$fileExt';
 
@@ -211,7 +213,7 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
                 bytes,
                 fileOptions: FileOptions(
                   upsert: true,
-                  contentType: 'image/$fileExt',
+                  contentType: ImageMime.fromExtension(fileExt),
                 ),
               );
           final imageUrl = supabase.storage
@@ -799,11 +801,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   // 공유 등급 계산
   String get _shareLevel {
-    if (_shareCount >= 401) return '챔피언 / $_shareCount개';
-    if (_shareCount >= 201) return '고수 / $_shareCount개';
-    if (_shareCount >= 51) return '중급 / $_shareCount개';
-    if (_shareCount >= 1) return '입문 / $_shareCount개';
-    return '없음 / 0개';
+    if (_shareCount >= 400) return '챔피언 / $_shareCount회';
+    if (_shareCount >= 200) return '고수 / $_shareCount회';
+    if (_shareCount >= 50) return '중급 / $_shareCount회';
+    if (_shareCount >= 1) return '입문 / $_shareCount회';
+    return '없음 / 0회';
   }
 
   // 공유 달성도: 명언 신청 조건(30회) 대비 신청용 공유 카운트 진행률(Figma "N / 30")
@@ -1054,7 +1056,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
       // 파일 읽기
       final bytes = await File(croppedFile.path).readAsBytes();
-      final fileExt = croppedFile.path.split('.').last;
+      final fileExt = ImageMime.extensionOf(croppedFile.path);
       final fileName = '$_deviceId.$fileExt';
       final filePath = 'profiles/$fileName';
 
@@ -1066,7 +1068,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             bytes,
             fileOptions: FileOptions(
               upsert: true,
-              contentType: 'image/$fileExt',
+              contentType: ImageMime.fromExtension(fileExt),
             ),
           );
 
@@ -1812,10 +1814,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                                   width: 148,
                                                   height: 146,
                                                 ),
-                                                Image.asset(
-                                                  'assets/icon/figma_profile_plus.png',
-                                                  width: 24.6,
-                                                  height: 24.6,
+                                                // PNG(불투명 #F5F5F5 배경)는 회색 원 위에 흰 사각형으로
+                                                // 보이므로 + 아이콘은 코드로 그린다.
+                                                const _ProfilePlusIcon(
+                                                  size: 24.6,
+                                                  thickness: 3,
+                                                  color: _appMutedGreen,
                                                 ),
                                               ],
                                             ),
@@ -2136,9 +2140,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   ({String label, int remaining}) _nextShareTier(int shareCount) {
     if (shareCount < 1) return (label: '입문', remaining: 1 - shareCount);
-    if (shareCount < 51) return (label: '중급', remaining: 51 - shareCount);
-    if (shareCount < 201) return (label: '고수', remaining: 201 - shareCount);
-    if (shareCount < 401) return (label: '챔피언', remaining: 401 - shareCount);
+    if (shareCount < 50) return (label: '중급', remaining: 50 - shareCount);
+    if (shareCount < 200) return (label: '고수', remaining: 200 - shareCount);
+    if (shareCount < 400) return (label: '챔피언', remaining: 400 - shareCount);
     return (label: '챔피언', remaining: 0);
   }
 
@@ -2167,13 +2171,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Widget _buildLeaderboardRank(int rank) {
+    // Figma Rank Card: 1~3위는 프로필 사진 왼쪽에 41px 메달. 흔들리는 애니메이션으로 재생한다.
     if (rank >= 1 && rank <= 3) {
-      return Image.asset(
-        'assets/${rank}_rank.png',
-        width: 41,
-        height: 41,
-        fit: BoxFit.contain,
-      );
+      return AnimatedRankMedal(rank: rank, size: 41);
     }
 
     return SizedBox(
@@ -3276,9 +3276,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                   final bytes = await File(
                                     selectedImage!.path,
                                   ).readAsBytes();
-                                  final fileExt = selectedImage!.path
-                                      .split('.')
-                                      .last;
+                                  final fileExt = ImageMime.extensionOf(
+                                    selectedImage!.path,
+                                  );
                                   final filePath =
                                       'quote_requests/${InstallationIdentity.id}/$requestQuoteId.$fileExt';
 
@@ -3289,7 +3289,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                         bytes,
                                         fileOptions: FileOptions(
                                           upsert: true,
-                                          contentType: 'image/$fileExt',
+                                          contentType: ImageMime.fromExtension(
+                                            fileExt,
+                                          ),
                                         ),
                                       );
 
@@ -3537,5 +3539,37 @@ class _DropdownTrianglePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DropdownTrianglePainter oldDelegate) {
     return oldDelegate.color != color;
+  }
+}
+
+/// 프로필 사진 미설정 시 회색 원 중앙에 표시하는 + 아이콘(배경 없음).
+class _ProfilePlusIcon extends StatelessWidget {
+  const _ProfilePlusIcon({
+    required this.size,
+    required this.thickness,
+    required this.color,
+  });
+
+  final double size;
+  final double thickness;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final bar = BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(thickness / 2),
+    );
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(width: size, height: thickness, decoration: bar),
+          Container(width: thickness, height: size, decoration: bar),
+        ],
+      ),
+    );
   }
 }

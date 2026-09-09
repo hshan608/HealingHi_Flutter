@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'installation_identity.dart';
 import 'quote_share.dart';
 import 'resoner_image_helper.dart';
+import 'typographic_quotes.dart';
 import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
@@ -302,7 +303,9 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                                 isSample ? 'tutorial_sample' : quoteId,
                               ),
                               title: '${quote['resoner_kr']}',
-                              content: quote['text_kr'],
+                              content: toTypographicQuotes(
+                                quote['text_kr']?.toString() ?? '',
+                              ),
                               quoteId: quoteId,
                               tag: quote['tag_kr']?.toString(),
                               resonerImagePath: ResonerImageHelper.resolve(

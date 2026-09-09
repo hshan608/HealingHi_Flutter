@@ -26,6 +26,8 @@ class TutorialTargets {
   static final searchTabs = GlobalKey(debugLabel: 'tutorial_search_tabs');
   static final searchField = GlobalKey(debugLabel: 'tutorial_search_field');
   static final bookmarkTab = GlobalKey(debugLabel: 'tutorial_bookmark_tab');
+  // 하단 바 전체. 탭 강조 영역이 바 밖(본문 쪽)으로 번지지 않도록 경계로 쓴다.
+  static final bottomNavBar = GlobalKey(debugLabel: 'tutorial_bottom_nav_bar');
   static final bookmarkLike = GlobalKey(debugLabel: 'tutorial_bookmark_like');
   static final profileTitle = GlobalKey(debugLabel: 'tutorial_profile_title');
   static final profileImage = GlobalKey(debugLabel: 'tutorial_profile_image');
@@ -192,9 +194,39 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       combined.right,
       combined.bottom - step.targetBottomInset,
     );
-    final padded = adjusted.inflate(step.targetPadding);
+    var padded = _applyMinSize(
+      adjusted.inflate(step.targetPadding),
+      step.minTargetSize,
+    );
+    // 경계 위젯이 지정된 단계는 패딩까지 포함한 강조 영역을 그 위젯 사각형 안으로 제한한다.
+    final bounds = _measureBounds(step.boundsKey, overlayBox);
+    if (bounds != null) {
+      padded = padded.intersect(bounds);
+    }
     final clipped = padded.intersect(Offset.zero & overlayBox.size);
     return clipped.isEmpty ? null : clipped;
+  }
+
+  Rect? _measureBounds(GlobalKey? boundsKey, RenderBox overlayBox) {
+    if (boundsKey == null) return null;
+    final boundsBox =
+        boundsKey.currentContext?.findRenderObject() as RenderBox?;
+    if (boundsBox == null || !boundsBox.hasSize || !boundsBox.attached) {
+      return null;
+    }
+    final localTopLeft = overlayBox.globalToLocal(
+      boundsBox.localToGlobal(Offset.zero),
+    );
+    return localTopLeft & boundsBox.size;
+  }
+
+  /// 측정된 사각형을 중심 고정으로 [minSize] 이상으로 키운다.
+  /// 하트·공유처럼 위젯 자체 크기가 다른 버튼도 같은 크기의 강조 영역을 갖게 한다.
+  static Rect _applyMinSize(Rect rect, Size? minSize) {
+    if (minSize == null) return rect;
+    final width = rect.width < minSize.width ? minSize.width : rect.width;
+    final height = rect.height < minSize.height ? minSize.height : rect.height;
+    return Rect.fromCenter(center: rect.center, width: width, height: height);
   }
 
   @override
@@ -238,18 +270,6 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
                     ),
                   ),
                   Positioned(
-                    top: safeTop + 10,
-                    right: 14,
-                    child: TextButton(
-                      onPressed: widget.onSkip,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.black.withValues(alpha: 0.25),
-                      ),
-                      child: const Text('건너뛰기'),
-                    ),
-                  ),
-                  Positioned(
                     left: 24,
                     top: calloutTop,
                     width: calloutWidth,
@@ -261,6 +281,23 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
                       stepCount: steps.length,
                       buttonLabel: isLast ? '확인' : '다음',
                       onPressed: widget.onNext,
+                    ),
+                  ),
+                  // 건너뛰기는 항상 최상위에 둔다. 프로필 1단계처럼 강조 영역이
+                  // 화면 상단 전체 폭을 덮는 경우 밝은 구멍 안에 놓이므로,
+                  // 어두운 배경 위에서도 밝은 배경 위에서도 읽히는 진한 알약 배경을 쓴다.
+                  Positioned(
+                    top: safeTop + 10,
+                    right: 14,
+                    child: TextButton(
+                      key: const ValueKey('tutorial_skip_button'),
+                      onPressed: widget.onSkip,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.black.withValues(alpha: 0.6),
+                        shape: const StadiumBorder(),
+                      ),
+                      child: const Text('건너뛰기'),
                     ),
                   ),
                 ],
@@ -426,6 +463,8 @@ class _TutorialStep {
     required this.calloutTop,
     this.targetPadding = 0,
     this.targetBottomInset = 0,
+    this.minTargetSize,
+    this.boundsKey,
   });
 
   final String title;
@@ -435,7 +474,17 @@ class _TutorialStep {
   final double Function(Size size, double safeTop, Rect target) calloutTop;
   final double targetPadding;
   final double targetBottomInset;
+
+  /// 강조 영역의 최소 크기. 측정값이 이보다 작으면 중심을 유지한 채 확장한다.
+  final Size? minTargetSize;
+
+  /// 강조 영역(패딩 포함)을 이 위젯의 사각형 안으로 제한한다. 없으면 제한하지 않는다.
+  final GlobalKey? boundsKey;
 }
+
+/// 홈 카드의 하트·공유 버튼 강조 영역 공통 크기.
+/// 두 버튼의 위젯 크기(23×23, 18×20)가 달라도 같은 크기로 강조되도록 고정한다.
+const Size _homeActionTargetSize = Size(44, 44);
 
 List<_TutorialStep> _stepsFor(TutorialSection section) {
   switch (section) {
@@ -455,9 +504,14 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           title: '마음에 남는 명언을 보관해요.',
           description: '하트를 누르면 언제든 다시 꺼내 볼 수 있어요.',
           targetKeys: <GlobalKey>[TutorialTargets.homeLike],
-          fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(size.width - 152, safeTop + 218, 58, 58),
+          fallbackTarget: (size, safeTop) => Rect.fromLTWH(
+            size.width - 152,
+            safeTop + 218,
+            _homeActionTargetSize.width,
+            _homeActionTargetSize.height,
+          ),
           targetPadding: 6,
+          minTargetSize: _homeActionTargetSize,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
@@ -465,33 +519,41 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           title: '좋은 명언을 함께 나눠요.',
           description: '공유 버튼을 눌러 소중한 사람에게 문장을 전해보세요.',
           targetKeys: <GlobalKey>[TutorialTargets.homeShare],
-          fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(size.width - 88, safeTop + 218, 58, 58),
-          targetPadding: 4,
+          fallbackTarget: (size, safeTop) => Rect.fromLTWH(
+            size.width - 88,
+            safeTop + 218,
+            _homeActionTargetSize.width,
+            _homeActionTargetSize.height,
+          ),
+          targetPadding: 6,
+          minTargetSize: _homeActionTargetSize,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
       ];
     case TutorialSection.search:
+      // 검색 화면 레이아웃(search_page.dart): SafeArea 최소 상단 61 → 헤더 43
+      // → 간격 29 → 입력 바 63(좌우 25) → 간격 29 → 탭 50.
+      double searchBarTop(double safeTop) =>
+          (safeTop > 61 ? safeTop : 61) + 43 + 29;
       return <_TutorialStep>[
         _TutorialStep(
           title: '원하는 명언을 찾아보세요.',
           description: '저자 이름, 명언 내용, 주제 중 원하는 기준으로 검색할 수 있어요.',
           targetKeys: <GlobalKey>[TutorialTargets.searchTabs],
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(24, safeTop + 145, size.width - 48, 54),
+              Rect.fromLTWH(0, searchBarTop(safeTop) + 63 + 29, size.width, 50),
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
         _TutorialStep(
           title: '원하는 기준으로 검색해 보세요.',
           description: '저자·본문·주제를 선택하고 찾고 싶은 내용을 입력해 주세요.',
-          targetKeys: <GlobalKey>[
-            TutorialTargets.searchField,
-            TutorialTargets.searchTabs,
-          ],
+          // 입력 바(아이콘 포함 흰 박스) 전체를 강조한다.
+          targetKeys: <GlobalKey>[TutorialTargets.searchField],
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(24, safeTop + 58, size.width - 48, 141),
+              Rect.fromLTWH(25, searchBarTop(safeTop), size.width - 50, 63),
+          targetPadding: 4,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
@@ -505,6 +567,8 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(size.width * 0.625 - 32, size.height - 70, 64, 62),
           targetPadding: 8,
+          // 패딩이 하단 바 위쪽 본문 영역으로 침범하지 않도록 바 안으로 제한한다.
+          boundsKey: TutorialTargets.bottomNavBar,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.top - 190, size, safeTop),
         ),

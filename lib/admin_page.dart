@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'typographic_quotes.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final supabase = Supabase.instance.client;
@@ -336,7 +337,7 @@ class _AdminPageState extends State<AdminPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            quote['text_kr'] ?? '',
+            toTypographicQuotes(quote['text_kr']?.toString() ?? ''),
             style: const TextStyle(
               fontSize: 15,
               color: Colors.black87,

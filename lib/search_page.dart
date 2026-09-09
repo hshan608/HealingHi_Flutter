@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:like_button/like_button.dart';
 import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
+import 'typographic_quotes.dart';
 import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
@@ -540,6 +541,8 @@ class _SearchScreenState extends State<SearchScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 25),
                 child: Container(
+                  // 튜토리얼 강조 영역은 아이콘을 포함한 입력 바 전체를 기준으로 측정한다.
+                  key: TutorialTargets.searchField,
                   height: 63,
                   padding: const EdgeInsets.symmetric(horizontal: 30),
                   decoration: BoxDecoration(
@@ -558,7 +561,6 @@ class _SearchScreenState extends State<SearchScreen> {
                       const SizedBox(width: 25),
                       Expanded(
                         child: TextField(
-                          key: TutorialTargets.searchField,
                           controller: _searchController,
                           focusNode: _searchFocusNode,
                           onChanged: _performSearch,
@@ -691,7 +693,7 @@ class _SearchScreenState extends State<SearchScreen> {
           final quoteId = _extractQuoteId(quote);
           return _buildContentBox(
             '${quote['resoner_kr']}',
-            quote['text_kr'],
+            toTypographicQuotes(quote['text_kr']?.toString() ?? ''),
             quoteId,
             quote['tag_kr']?.toString(),
             quote['imagefile']?.toString(),
@@ -911,7 +913,9 @@ class _SearchScreenState extends State<SearchScreen> {
                             itemBuilder: (context, index) {
                               final quote = quotes[index];
                               return _buildPopupQuoteCard(
-                                content: quote['text_kr']?.toString() ?? '',
+                                content: toTypographicQuotes(
+                                  quote['text_kr']?.toString() ?? '',
+                                ),
                                 quoteId: _extractQuoteId(quote),
                                 tag: quote['tag_kr']?.toString(),
                                 author: authorOf(quote),

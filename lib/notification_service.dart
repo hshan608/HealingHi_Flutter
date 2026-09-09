@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'typographic_quotes.dart';
+
 class DailyNotificationSettings {
   const DailyNotificationSettings({
     required this.enabled,
@@ -125,7 +127,9 @@ class NotificationService {
 
     final quotes = response
         .map((row) {
-          final text = row['text_kr']?.toString().trim() ?? '';
+          final text = toTypographicQuotes(
+            row['text_kr']?.toString().trim() ?? '',
+          );
           if (text.isEmpty) return null;
           final author = row['resoner_kr']?.toString().trim() ?? '';
           return NotificationQuote(
