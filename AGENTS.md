@@ -82,6 +82,10 @@ This project uses a **single-file architecture** where all code resides in `lib/
 - `BookmarkScreen`: Saved/bookmarked quotes
 - `MyPageScreen`: User profile with image upload, language settings, and share progress
 
+### Responsive Scaling
+
+Screen code uses fixed px values tuned on a Pixel 9 emulator (411.4dp wide). `AppScale` in `lib/responsive.dart`, mounted via `MaterialApp.builder`, scales the whole tree by `shortestSide / 411.4` (clamped 0.7–1.4) and rewrites `MediaQuery` size/padding/viewInsets to match. Write new screens in plain px; wrap fixed-size widgets such as AdMob banners in `AppScale.unscaled()`.
+
 ### State Management
 The app uses **StatefulWidget** and `setState()` for state management. Each screen maintains its own local state without external state management libraries.
 

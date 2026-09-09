@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'dart:io';
+import 'installation_identity.dart';
+import 'quote_share.dart';
 import 'resoner_image_helper.dart';
+import 'typographic_quotes.dart';
+import 'tutorial.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
 
+// 튜토리얼에서 예시로 보여줄 명언 ID (실제 보관 여부와 무관하게 고정)
+const _tutorialSampleQuoteId = '10001';
+
 // 보관함 화면
 class BookmarkScreen extends StatefulWidget {
-  const BookmarkScreen({super.key});
+  const BookmarkScreen({super.key, this.isTutorialActive = false});
+
+  // 보관함 튜토리얼이 표시되는 동안에만 예시 카드를 노출한다.
+  final bool isTutorialActive;
 
   @override
   State<BookmarkScreen> createState() => _BookmarkScreenState();
@@ -23,44 +30,49 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
   String? _deviceId;
   int? _userIdx;
   Map<String, String> _requestQuoteImages = {}; // 'req_42' -> image_url
+  Map<String, dynamic>? _tutorialSampleQuote;
 
   @override
   void initState() {
     super.initState();
     ResonerImageHelper.load();
     _initUserIdentity();
+    if (widget.isTutorialActive) {
+      _loadTutorialSampleQuote();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BookmarkScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isTutorialActive && !oldWidget.isTutorialActive) {
+      _loadTutorialSampleQuote();
+    }
+  }
+
+  // 튜토리얼용 예시 명언은 보관함이 비어 있어도 항상 같은 카드를 보여준다.
+  Future<void> _loadTutorialSampleQuote() async {
+    if (_tutorialSampleQuote != null) return;
+    try {
+      await ResonerImageHelper.load();
+      final quote = await supabase
+          .from('quotes')
+          .select()
+          .eq('id', _tutorialSampleQuoteId)
+          .maybeSingle();
+      if (!mounted || quote == null) return;
+      setState(() {
+        _tutorialSampleQuote = Map<String, dynamic>.from(quote);
+      });
+    } catch (e) {
+      print('튜토리얼 예시 명언 로드 실패: $e');
+    }
   }
 
   Future<void> _initUserIdentity() async {
     try {
-      final deviceInfo = DeviceInfoPlugin();
-      String? deviceId;
-
-      if (Platform.isAndroid) {
-        final info = await deviceInfo.androidInfo;
-        deviceId = info.id;
-      } else if (Platform.isIOS) {
-        final info = await deviceInfo.iosInfo;
-        deviceId = info.identifierForVendor;
-      } else if (Platform.isWindows) {
-        final info = await deviceInfo.windowsInfo;
-        deviceId = info.deviceId;
-      } else if (Platform.isLinux) {
-        final info = await deviceInfo.linuxInfo;
-        deviceId = info.machineId;
-      } else if (Platform.isMacOS) {
-        final info = await deviceInfo.macOsInfo;
-        deviceId = info.systemGUID;
-      }
-
+      final deviceId = InstallationIdentity.id;
       _deviceId = deviceId;
-
-      if (deviceId == null) {
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
 
       final user = await supabase
           .from('users')
@@ -212,54 +224,64 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
     }
   }
 
-  void _shareContent(String title, String content) async {
-    try {
-      final shareResult = await Share.share(
-        '$title\n\n$content\n\n공유됨 - Healing Hi 앱',
-        subject: title,
-      );
-      if (shareResult.status == ShareResultStatus.success) {
-        await _incrementShareCount();
-      }
-    } catch (e) {
-      await Clipboard.setData(
-        ClipboardData(text: '$title\n\n$content\n\n공유됨 - Healing Hi 앱'),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('내용이 클립보드에 복사되었습니다!')));
-      }
-    }
+  // 명언 카드를 이미지로 캡처해서 공유 (홈 화면과 동일한 공용 로직)
+  Future<void> _shareContent(
+    String title,
+    String content,
+    ImageProvider<Object>? authorImage,
+  ) async {
+    if (!mounted) return;
+    await QuoteShare.shareAsImage(
+      context: context,
+      author: title,
+      content: content,
+      authorImage: authorImage,
+      onShared: _incrementShareCount,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // 튜토리얼 중에는 예시 카드를 맨 위에 두어 강조 대상이 항상 존재하게 한다.
+    final sampleQuote = widget.isTutorialActive ? _tutorialSampleQuote : null;
+    final displayQuotes = <Map<String, dynamic>>[
+      if (sampleQuote != null) sampleQuote,
+      ..._savedQuotes.where(
+        (quote) =>
+            sampleQuote == null ||
+            quote['id']?.toString() != _tutorialSampleQuoteId,
+      ),
+    ];
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8E3DF),
+      backgroundColor: const Color(0xFFF8E3DE),
       body: SafeArea(
+        bottom: false,
+        minimum: const EdgeInsets.only(top: 61),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 32.0),
+          padding: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Text(
-                    '보관함',
+              const SizedBox(
+                height: 43,
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    '오래 간직하고 싶은 문장을 모아보세요.',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF595959),
                     ),
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 20),
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _savedQuotes.isEmpty
+                    : displayQuotes.isEmpty
                     ? const Center(
                         child: Text(
                           '보관한 명언이 없습니다.',
@@ -270,19 +292,29 @@ class _BookmarkScreenState extends State<BookmarkScreen> {
                     : RefreshIndicator(
                         onRefresh: _loadSavedQuotes,
                         child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 10.0),
-                          itemCount: _savedQuotes.length,
+                          padding: const EdgeInsets.fromLTRB(27, 5, 27, 5),
+                          itemCount: displayQuotes.length,
                           itemBuilder: (context, index) {
-                            final quote = _savedQuotes[index];
+                            final quote = displayQuotes[index];
                             final quoteId = quote['id']?.toString();
+                            final isSample = sampleQuote != null && index == 0;
                             return _AnimatedBookmarkCard(
-                              key: ValueKey(quoteId),
+                              key: ValueKey(
+                                isSample ? 'tutorial_sample' : quoteId,
+                              ),
                               title: '${quote['resoner_kr']}',
-                              content: quote['text_kr'],
+                              content: toTypographicQuotes(
+                                quote['text_kr']?.toString() ?? '',
+                              ),
                               quoteId: quoteId,
                               tag: quote['tag_kr']?.toString(),
-                              resonerImagePath: ResonerImageHelper.resolve(quote['imagefile']?.toString(), quote['resoner_eng']?.toString()),
+                              resonerImagePath: ResonerImageHelper.resolve(
+                                quote['imagefile']?.toString(),
+                                quote['resoner_eng']?.toString(),
+                              ),
                               requestImageUrl: _requestQuoteImages[quoteId],
+                              isTutorialTarget: index == 0,
+                              isSample: isSample,
                               onRemoveFromDB: _deleteFromSupabase,
                               onRemoveFromList: _removeFromList,
                               onShare: _shareContent,
@@ -314,9 +346,11 @@ class _AnimatedBookmarkCard extends StatefulWidget {
   final String? tag;
   final String? resonerImagePath;
   final String? requestImageUrl;
+  final bool isTutorialTarget;
+  final bool isSample;
   final Future<void> Function(String?) onRemoveFromDB;
   final void Function(String?) onRemoveFromList;
-  final void Function(String, String) onShare;
+  final Future<void> Function(String, String, ImageProvider<Object>?) onShare;
 
   const _AnimatedBookmarkCard({
     super.key,
@@ -326,6 +360,8 @@ class _AnimatedBookmarkCard extends StatefulWidget {
     this.tag,
     this.resonerImagePath,
     this.requestImageUrl,
+    required this.isTutorialTarget,
+    this.isSample = false,
     required this.onRemoveFromDB,
     required this.onRemoveFromList,
     required this.onShare,
@@ -342,6 +378,7 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
   late final Animation<double> _heartScale;
   late final Animation<Offset> _slideAnimation;
   late final Animation<double> _fadeAnimation;
+  late final Animation<double> _collapseAnimation;
   bool _isRemoving = false;
 
   @override
@@ -358,17 +395,26 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
       TweenSequenceItem(tween: Tween(begin: 1.35, end: 0.0), weight: 80),
     ]).animate(CurvedAnimation(parent: _heartController, curve: Curves.easeIn));
 
-    // 카드 슬라이드 + 페이드 애니메이션
+    // 카드 숨김 애니메이션: 오른쪽 슬라이드 + 페이드(0~65%) 뒤에
+    // 높이 접힘(45~100%)이 겹쳐 이어져, 아래 카드가 튀지 않고 올라온다.
     _slideController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 480),
+    );
+    final slideCurve = CurvedAnimation(
+      parent: _slideController,
+      curve: const Interval(0.0, 0.65, curve: Curves.easeIn),
     );
     _slideAnimation = Tween<Offset>(
       begin: Offset.zero,
       end: const Offset(1.5, 0),
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeIn));
-    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeIn),
+    ).animate(slideCurve);
+    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(slideCurve);
+    _collapseAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _slideController,
+        curve: const Interval(0.45, 1.0, curve: Curves.easeInOut),
+      ),
     );
   }
 
@@ -380,7 +426,8 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
   }
 
   Future<void> _handleUnlike() async {
-    if (_isRemoving) return;
+    // 예시 카드는 실제 보관 항목이 아니므로 삭제하지 않는다.
+    if (widget.isSample || _isRemoving) return;
     _isRemoving = true;
 
     // Supabase 삭제를 백그라운드에서 시작 (애니메이션과 병렬)
@@ -389,7 +436,7 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
     // 하트 축소 애니메이션
     await _heartController.forward();
 
-    // 카드 오른쪽 슬라이드 애니메이션
+    // 카드 오른쪽 슬라이드 → 높이 접힘 애니메이션
     await _slideController.forward();
 
     // 리스트에서 제거
@@ -398,126 +445,166 @@ class _AnimatedBookmarkCardState extends State<_AnimatedBookmarkCard>
 
   @override
   Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 16.0),
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16.0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 1,
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 상단: 프로필 이미지 + 저자명
-              Row(
-                children: [
-                  ClipOval(
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      color: Colors.grey[200],
-                      child: widget.requestImageUrl != null
-                          ? Image.network(
-                              widget.requestImageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                            )
-                          : widget.resonerImagePath != null
-                              ? Image.asset(
-                                  widget.resonerImagePath!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                                )
-                              : Icon(Icons.person, size: 20, color: Colors.grey[400]),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    widget.title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              // 명언 텍스트
-              Text(
-                widget.content,
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w300,
-                  color: Colors.grey[800],
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 16),
-              // 하단: 태그 + 좋아요/공유 버튼
-              Row(
-                children: [
-                  // 태그
-                  if (widget.tag != null && widget.tag!.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(20),
+    // SizeTransition이 하단 margin까지 포함해 접으므로 카드 간격도 함께 사라진다.
+    return SizeTransition(
+      sizeFactor: _collapseAnimation,
+      axisAlignment: -1.0,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 23),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(25),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 상단: 프로필 이미지 + 저자명
+                Row(
+                  children: [
+                    ClipOval(
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        color: Colors.grey[200],
+                        child: widget.requestImageUrl != null
+                            ? Image.network(
+                                widget.requestImageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.grey[400],
+                                    ),
+                              )
+                            : widget.resonerImagePath != null
+                            ? Image.asset(
+                                widget.resonerImagePath!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(
+                                      Icons.person,
+                                      size: 20,
+                                      color: Colors.grey[400],
+                                    ),
+                              )
+                            : Icon(
+                                Icons.person,
+                                size: 20,
+                                color: Colors.grey[400],
+                              ),
                       ),
+                    ),
+                    const SizedBox(width: 15),
+                    Expanded(
                       child: Text(
-                        '# ${widget.tag}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
+                        widget.title,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black,
                         ),
                       ),
                     ),
-                  const Spacer(),
-                  // 하트 버튼 (커스텀 애니메이션)
-                  GestureDetector(
-                    onTap: _isRemoving ? null : _handleUnlike,
-                    child: AnimatedBuilder(
-                      animation: _heartScale,
-                      builder: (context, child) {
-                        return Transform.scale(
-                          scale: _heartScale.value,
-                          child: child,
-                        );
-                      },
-                      child: Image.asset(
-                        'assets/heart2.png',
-                        width: 32,
+                  ],
+                ),
+                const SizedBox(height: 18),
+                // 명언 텍스트
+                Text(
+                  widget.content,
+                  textAlign: TextAlign.left,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w300,
+                    color: Color(0xFF414141),
+                    height: 25 / 18,
+                    letterSpacing: -0.36,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                // 하단: 태그 + 좋아요/공유 버튼
+                Row(
+                  children: [
+                    // 태그
+                    if (widget.tag != null && widget.tag!.isNotEmpty)
+                      Container(
                         height: 32,
+                        alignment: Alignment.center,
+                        // Figma Tag BG: 텍스트 좌 9 / 우 11, 높이 32의 완전한 필 형태
+                        padding: const EdgeInsets.only(left: 9, right: 11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          '# ${widget.tag}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFF9E9E9E),
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    // 하트 버튼 (커스텀 애니메이션)
+                    GestureDetector(
+                      key: widget.isTutorialTarget
+                          ? TutorialTargets.bookmarkLike
+                          : null,
+                      onTap: _isRemoving ? null : _handleUnlike,
+                      child: AnimatedBuilder(
+                        animation: _heartScale,
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: _heartScale.value,
+                            child: child,
+                          );
+                        },
+                        child: SvgPicture.asset(
+                          'assets/icon/figma_saved_heart.svg',
+                          width: 23,
+                          height: 19,
+                        ),
                       ),
                     ),
-                  ),
-                  // 공유 버튼
-                  IconButton(
-                    onPressed: () => widget.onShare(widget.title, widget.content),
-                    icon: Icon(Icons.share, color: Colors.grey[600]),
-                    iconSize: 24,
-                    tooltip: '공유하기',
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 70),
+                    // 공유 버튼
+                    IconButton(
+                      onPressed: () => widget.onShare(
+                        widget.title,
+                        widget.content,
+                        widget.requestImageUrl != null
+                            ? NetworkImage(widget.requestImageUrl!)
+                            : widget.resonerImagePath != null
+                            ? AssetImage(widget.resonerImagePath!)
+                            : null,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 18,
+                        height: 20,
+                      ),
+                      style: IconButton.styleFrom(
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: SvgPicture.asset(
+                        'assets/icon/figma_card_share.svg',
+                        width: 18,
+                        height: 20,
+                      ),
+                      tooltip: '공유하기',
+                    ),
+                    const SizedBox(width: 19),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
