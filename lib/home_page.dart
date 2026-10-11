@@ -179,10 +179,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await showAppNoticePopup(
         context,
-        icon: const Icon(
-          Icons.auto_awesome_outlined,
-          color: Color(0xFF81A684),
-          size: 30,
+        icon: Image.asset(
+          'assets/icon/quote_published.png',
+          width: 30,
+          height: 30,
+          fit: BoxFit.contain,
+          excludeFromSemantics: true,
         ),
         title: '신청한 명언이 추가 됐어요!',
         message: '신청하신 명언이 힐링 하이에 소개되었어요.\n홈에서 “내가 신청한 명언” 배지로 확인해 보세요.',

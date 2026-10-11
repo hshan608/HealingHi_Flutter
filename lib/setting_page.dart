@@ -758,10 +758,12 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
     await showAppNoticePopup(
       context,
       barrierDismissible: false,
-      icon: const Icon(
-        Icons.check_circle_outline,
-        color: _appMutedGreen,
-        size: 30,
+      icon: Image.asset(
+        'assets/icon/quote_request_received.png',
+        width: 30,
+        height: 30,
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
       ),
       title: '명언 신청 완료',
       message: '관리자 검토 후 등록됩니다.\n신청용 공유 카운트만 0회로 초기화됩니다.',
@@ -3377,8 +3379,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  // Figma Settings (Ranking Guide): 랭킹 시트와 같은 규격의 바텀시트로 공유 달성도를 안내한다.
-  // (시안의 제목 "공유 랭킹"은 복붙 잔재로 보고 "공유 달성도란?"을 유지)
+  // 공유 달성도 안내: 시안의 문단 간격과 문구별 강조를 유지한다.
   Future<void> _showAchievementInfoDialog() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -3408,7 +3409,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 child: Column(
                   children: [
                     _buildSheetHandle(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 19),
                     // Figma Info: 높이 33(상하 3), 제목 중앙
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 3),
@@ -3419,7 +3420,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             '공유 달성도란?',
                             style: TextStyle(
                               color: Colors.black,
-                              fontSize: 20,
+                              fontSize: 23,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3440,7 +3441,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       ),
                     ),
                     const SizedBox(height: 19),
-                    // Figma 본문 박스: 409×412(좌우 15), 내부 25/10, 버튼 없음
+                    // 안내 문구는 시트 배경 위에 표시한다.
                     Flexible(
                       child: Container(
                         width: double.infinity,
@@ -3449,27 +3450,61 @@ class _MyPageScreenState extends State<MyPageScreen> {
                           horizontal: 25,
                           vertical: 10,
                         ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE3EAE3),
-                          borderRadius: BorderRadius.circular(25),
-                        ),
                         child: const Center(
                           child: SingleChildScrollView(
-                            child: Text(
-                              '명언을 공유할 때마다\n'
-                              '공유 달성도가 차곡차곡 올라가요.\n\n'
-                              '달성도를 모두 채우면\n'
-                              '원하는 명언을 제작자에게 직접 신청할 수 있어요.\n\n'
-                              '신청한 명언은 제작자의 확인 후\n'
-                              '힐링 하이에 소개될 수 있어요.\n\n'
-                              '여러분의 공유가\n'
-                              '힐링 하이에 새로운 문장을 더해요.',
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text:
+                                        '명언을 공유할 때마다\n'
+                                        '공유 달성도가 차곡차곡 올라가요.\n\n'
+                                        '달성도를 모두 채우면\n',
+                                  ),
+                                  TextSpan(
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    children: [
+                                      TextSpan(text: '원하는 명언을 제작자에게\n'),
+                                      TextSpan(
+                                        text: '직접',
+                                        style: TextStyle(
+                                          color: Color(0xFFD74E44),
+                                        ),
+                                      ),
+                                      TextSpan(text: ' 신청할 수 있어요.'),
+                                    ],
+                                  ),
+                                  TextSpan(
+                                    text:
+                                        '\n\n신청한 명언은 제작자의 확인 후\n'
+                                        '힐링 하이에 소개될 수 있어요.\n\n\n',
+                                  ),
+                                  TextSpan(
+                                    style: TextStyle(
+                                      color: _appMutedGreen,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    children: [
+                                      TextSpan(text: '여러분의 공유가\n힐링 하이에 '),
+                                      TextSpan(
+                                        text: '새로운 문장',
+                                        style: TextStyle(
+                                          color: Color(0xFFD74E44),
+                                        ),
+                                      ),
+                                      TextSpan(text: '을 더해요.'),
+                                    ],
+                                  ),
+                                ],
+                              ),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.black,
-                                fontSize: 16,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w400,
-                                height: 1.6,
+                                height: 1.5,
                               ),
                             ),
                           ),

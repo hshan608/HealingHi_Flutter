@@ -792,7 +792,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     _showQuotesBottomSheet(
       title: subject,
-      leading: _buildSubjectIcon(size: 73, iconSize: 40),
+      leading: _buildSubjectIcon(size: 73),
       quotes: subjectQuotes,
       authorOf: (quote) => quote['resoner_kr']?.toString() ?? '',
     );
@@ -991,7 +991,7 @@ class _SearchScreenState extends State<SearchScreen> {
       leading: SizedBox(
         width: 60,
         height: 59,
-        child: Center(child: _buildSubjectIcon(size: 59, iconSize: 32)),
+        child: Center(child: _buildSubjectIcon(size: 59)),
       ),
       title: subject,
     );
@@ -1104,16 +1104,14 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// 주제 아이콘. Figma는 녹색 태그 벡터이나 동일 SVG 자산이 없어 Material 아이콘으로 대체.
-  Widget _buildSubjectIcon({required double size, required double iconSize}) {
-    return Container(
+  /// 원형 배경을 포함한 주제 태그 원본 이미지.
+  Widget _buildSubjectIcon({required double size}) {
+    return Image.asset(
+      'assets/icon/search_subject.png',
       width: size,
       height: size,
-      decoration: const BoxDecoration(
-        color: _listItemBorder,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(Icons.local_offer_rounded, size: iconSize, color: _appGreen),
+      fit: BoxFit.contain,
+      excludeFromSemantics: true,
     );
   }
 
