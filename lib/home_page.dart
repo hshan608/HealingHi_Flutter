@@ -15,6 +15,7 @@ import 'resoner_image_helper.dart';
 import 'typographic_quotes.dart';
 import 'tutorial.dart';
 import 'app_popup.dart';
+import 'card_heart_icon.dart';
 
 // Supabase 클라이언트 전역 변수
 final supabase = Supabase.instance.client;
@@ -613,18 +614,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             dotPrimaryColor: Color(0xFFFF8788),
                             dotSecondaryColor: Color(0xFFFFB3B3),
                           ),
+                          // 해제 시에도 애니메이션이 보이도록 전용 아이콘을 쓴다.
                           likeBuilder: (bool isLiked) {
                             return Center(
-                              child: SvgPicture.asset(
-                                'assets/icon/figma_card_heart.svg',
-                                width: 23,
-                                height: 19,
-                                colorFilter: isLiked
-                                    ? const ColorFilter.mode(
-                                        Color(0xFFFF8788),
-                                        BlendMode.srcIn,
-                                      )
-                                    : null,
+                              child: CardHeartIcon(
+                                isLiked: isLiked,
+                                identity: quoteId,
                               ),
                             );
                           },

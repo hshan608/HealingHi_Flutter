@@ -64,6 +64,7 @@ dart format lib/            # `flutter format`은 제거된 명령이다
 | `quote_share.dart` | 명언 카드 이미지 캡처·공유 공용 로직(`QuoteShare`, `QuoteShareCard`). 홈·보관함이 함께 사용 |
 | `app_popup.dart` | Figma 400×241 공용 안내 팝업(`AppNoticePopup`, `showAppNoticePopup`). 신청 완료·리뷰 확인·신청 승인 알림에 사용 |
 | `ad_helper.dart`, `nickname_generator.dart` | AdMob 유닛 ID, 결정적 닉네임 생성 |
+| `card_heart_icon.dart` | `CardHeartIcon` — 홈·검색 카드 하트 아이콘. `LikeButton`은 보관 시에만 효과를 그리므로 해제(활성→비활성) 애니메이션을 여기서 재생한다. `likeBuilder` 안에서 쓰고 `identity`에 명언 ID를 넘긴다 |
 | `rank_medal.dart` | `AnimatedRankMedal` — 공유 랭킹 1~3위 메달(`assets/{n}_rank.png`) 흔들림 애니메이션. `disableAnimations`면 정지 이미지 |
 | `image_mime.dart` | 업로드 이미지 확장자 → 표준 MIME 변환(`ImageMime`). Storage 업로드의 `contentType`은 반드시 이걸로 만든다 |
 | `responsive.dart` | `AppScale` — 앱 루트 비율 스케일(아래 "반응형 스케일" 절) |

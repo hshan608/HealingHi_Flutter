@@ -141,7 +141,10 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshTarget());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollStepIntoView();
+      _refreshTarget();
+    });
     _targetRefreshTimer = Timer.periodic(
       const Duration(milliseconds: 120),
       (_) => _refreshTarget(),
@@ -155,7 +158,45 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         oldWidget.stepIndex != widget.stepIndex) {
       _measuredTarget = null;
       _refreshTarget();
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollStepIntoView(),
+      );
     }
+  }
+
+  /// 강조 대상 아래쪽이 스크롤 영역 밖(하단 메뉴 밑)에 있으면 여백 16을 두고 보이게 올린다.
+  /// 오버레이가 120ms마다 위치를 다시 재므로 스크롤 중에도 강조 영역이 따라간다.
+  void _scrollStepIntoView() {
+    if (!mounted) return;
+    final steps = _stepsFor(widget.section);
+    final step = steps[widget.stepIndex.clamp(0, steps.length - 1)];
+    final targetContext = step.scrollIntoViewKey?.currentContext;
+    if (targetContext == null) return;
+    final scrollable = Scrollable.maybeOf(targetContext);
+    final targetBox = targetContext.findRenderObject() as RenderBox?;
+    final viewportBox = scrollable?.context.findRenderObject() as RenderBox?;
+    if (scrollable == null ||
+        targetBox == null ||
+        viewportBox == null ||
+        !targetBox.hasSize ||
+        !viewportBox.hasSize) {
+      return;
+    }
+    // 같은 스케일 트리 안의 상대 좌표라 AppScale 배율의 영향을 받지 않는다.
+    final targetBottom = targetBox
+        .localToGlobal(Offset(0, targetBox.size.height), ancestor: viewportBox)
+        .dy;
+    final overflow = targetBottom + 16 - viewportBox.size.height;
+    if (overflow <= 0) return;
+    final position = scrollable.position;
+    position.animateTo(
+      (position.pixels + overflow).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -469,6 +510,7 @@ class _TutorialStep {
     this.targetBottomInset = 0,
     this.minTargetSize,
     this.boundsKey,
+    this.scrollIntoViewKey,
   });
 
   final String title;
@@ -484,11 +526,16 @@ class _TutorialStep {
 
   /// 강조 영역(패딩 포함)을 이 위젯의 사각형 안으로 제한한다. 없으면 제한하지 않는다.
   final GlobalKey? boundsKey;
+
+  /// 단계가 시작될 때 이 위젯의 아래쪽이 스크롤 영역 안에 들어오도록 스크롤한다.
+  /// 대상이 하단 메뉴 밑으로 잘리는 단계에 쓴다. 없으면 스크롤하지 않는다.
+  final GlobalKey? scrollIntoViewKey;
 }
 
-/// 홈 카드의 하트·공유 버튼 강조 영역 공통 크기.
-/// 두 버튼의 위젯 크기(23×23, 18×20)가 달라도 같은 크기로 강조되도록 고정한다.
-const Size _homeActionTargetSize = Size(44, 44);
+/// 카드 하트·공유 버튼 강조 영역 공통 크기.
+/// 홈 하트·공유(23×23, 18×20)와 보관함 하트(23×19)처럼 위젯 크기가 달라도
+/// 화면과 관계없이 같은 크기로 강조되도록 고정한다.
+const Size _cardActionTargetSize = Size(44, 44);
 
 List<_TutorialStep> _stepsFor(TutorialSection section) {
   switch (section) {
@@ -511,11 +558,11 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           fallbackTarget: (size, safeTop) => Rect.fromLTWH(
             size.width - 152,
             safeTop + 218,
-            _homeActionTargetSize.width,
-            _homeActionTargetSize.height,
+            _cardActionTargetSize.width,
+            _cardActionTargetSize.height,
           ),
           targetPadding: 6,
-          minTargetSize: _homeActionTargetSize,
+          minTargetSize: _cardActionTargetSize,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
@@ -526,11 +573,11 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           fallbackTarget: (size, safeTop) => Rect.fromLTWH(
             size.width - 88,
             safeTop + 218,
-            _homeActionTargetSize.width,
-            _homeActionTargetSize.height,
+            _cardActionTargetSize.width,
+            _cardActionTargetSize.height,
           ),
           targetPadding: 6,
-          minTargetSize: _homeActionTargetSize,
+          minTargetSize: _cardActionTargetSize,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
@@ -580,9 +627,15 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           title: '원할 때 보관을 해제할 수 있어요.',
           description: '하트를 다시 누르면 해당 명언이 보관함에서 제외돼요.',
           targetKeys: <GlobalKey>[TutorialTargets.bookmarkLike],
-          fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(size.width - 152, safeTop + 225, 58, 58),
+          fallbackTarget: (size, safeTop) => Rect.fromLTWH(
+            size.width - 145,
+            safeTop + 232,
+            _cardActionTargetSize.width,
+            _cardActionTargetSize.height,
+          ),
+          // 홈 하트·공유 단계와 같은 강조 크기(44 + 패딩 6)를 쓴다.
           targetPadding: 6,
+          minTargetSize: _cardActionTargetSize,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),
         ),
@@ -611,10 +664,14 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
             TutorialTargets.profileAchievement,
           ],
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(20, safeTop + 345, size.width - 40, 155),
+              Rect.fromLTWH(20, safeTop + 500, size.width - 40, 263),
           targetPadding: 4,
+          // 공유 달성도가 하단 메뉴 밑으로 잘리지 않도록 끝까지 보이게 스크롤한다.
+          scrollIntoViewKey: TutorialTargets.profileAchievement,
+          // 강조 영역이 화면 아래쪽에 있어 아래에 두면 영역과 겹치므로,
+          // 영역 위쪽(화면 중앙부)에 안내를 띄운다.
           calloutTop: (size, safeTop, target) =>
-              _fitCalloutTop(target.bottom + 16, size, safeTop),
+              _fitCalloutTop(target.top - 190, size, safeTop),
         ),
         _TutorialStep(
           title: '함께 나누는 사람들을 만나보세요.',

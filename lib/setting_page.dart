@@ -1470,22 +1470,60 @@ class _MyPageScreenState extends State<MyPageScreen> {
       initialItem: 6000 + selectedMinute,
     );
 
-    // Figma: 선택 밑줄은 각 열(오전/오후 110, 시·분 숫자 45) 전체 폭
-    Widget selectionLine() {
-      return const Align(
-        alignment: Alignment.bottomCenter,
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: _appMutedGreen),
-          child: SizedBox(height: 2, width: double.infinity),
+    // Figma PopUP Reference(iOS 휠 피커) 양식: 시 | 분 | AM/PM 세 열.
+    // 선택 행은 열 전체를 가로지르는 띠(위아래 구분선)로 표시하고,
+    // 위아래 항목은 원통형 휠 원근으로 흐려지며 작아진다.
+    const pickerItemExtent = 34.0;
+    const pickerHeight = 170.0; // 기본 5행
+    const pickerColumnWidth = 64.0;
+
+    Widget selectionBand() {
+      return IgnorePointer(
+        child: Container(
+          height: pickerItemExtent,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.55),
+            border: const Border.symmetric(
+              horizontal: BorderSide(color: Color(0xFFD1D1D6)),
+            ),
+          ),
         ),
       );
     }
 
     TextStyle pickerTextStyle(bool isSelected) {
       return TextStyle(
-        color: isSelected ? _appMutedGreen : const Color(0xFFAAAAAA),
-        fontSize: 18,
-        fontWeight: FontWeight.w500,
+        color: isSelected ? const Color(0xFF1C1C1E) : const Color(0xFFA8A8AD),
+        fontSize: 23,
+        fontWeight: FontWeight.w400,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      );
+    }
+
+    Widget pickerColumn({
+      required FixedExtentScrollController controller,
+      required int? childCount,
+      required ValueChanged<int> onSelected,
+      required String Function(int index) label,
+      required bool Function(int index) isSelected,
+      double offAxisFraction = 0,
+    }) {
+      return SizedBox(
+        width: pickerColumnWidth,
+        child: CupertinoPicker.builder(
+          scrollController: controller,
+          itemExtent: pickerItemExtent,
+          offAxisFraction: offAxisFraction,
+          selectionOverlay: null,
+          childCount: childCount,
+          onSelectedItemChanged: onSelected,
+          itemBuilder: (_, index) => Center(
+            child: Text(
+              label(index),
+              style: pickerTextStyle(isSelected(index)),
+            ),
+          ),
+        ),
       );
     }
 
@@ -1502,7 +1540,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: Container(
-                  height: 346,
+                  height: 416,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF6F4F1),
@@ -1548,120 +1586,52 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
-                        height: 100,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 5),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: CupertinoPicker.builder(
-                                  scrollController: periodController,
-                                  itemExtent: 30,
-                                  diameterRatio: 100,
-                                  squeeze: 1,
-                                  selectionOverlay: selectionLine(),
-                                  childCount: 2,
-                                  onSelectedItemChanged: (value) =>
-                                      setModalState(
-                                        () => selectedPeriod = value,
-                                      ),
-                                  itemBuilder: (_, index) => Center(
-                                    child: Text(
-                                      index == 0 ? '오전' : '오후',
-                                      style: pickerTextStyle(
-                                        selectedPeriod == index,
-                                      ),
-                                    ),
+                        height: pickerHeight,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            selectionBand(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // 시: 1~12 무한 반복. 왼쪽 열이라 원통 바깥쪽으로 기운다.
+                                pickerColumn(
+                                  controller: hourController,
+                                  childCount: null,
+                                  offAxisFraction: -0.4,
+                                  onSelected: (value) => setModalState(
+                                    () => selectedHour = value % 12 + 1,
                                   ),
+                                  label: (index) => '${index % 12 + 1}',
+                                  isSelected: (index) =>
+                                      selectedHour == index % 12 + 1,
                                 ),
-                              ),
-                              const SizedBox(width: 15),
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: CupertinoPicker.builder(
-                                        scrollController: hourController,
-                                        itemExtent: 30,
-                                        diameterRatio: 100,
-                                        squeeze: 1,
-                                        selectionOverlay: selectionLine(),
-                                        onSelectedItemChanged: (value) =>
-                                            setModalState(
-                                              () =>
-                                                  selectedHour = value % 12 + 1,
-                                            ),
-                                        itemBuilder: (_, index) => Center(
-                                          child: Text(
-                                            '${index % 12 + 1}',
-                                            style: pickerTextStyle(
-                                              selectedHour == index % 12 + 1,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    // Figma: 숫자 ↔ 단위 간격 25
-                                    const SizedBox(width: 25),
-                                    const Expanded(
-                                      child: Center(
-                                        child: Text(
-                                          '시',
-                                          style: TextStyle(
-                                            color: Colors.black,
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                // 분: 00~59 두 자리, 무한 반복
+                                pickerColumn(
+                                  controller: minuteController,
+                                  childCount: null,
+                                  onSelected: (value) => setModalState(
+                                    () => selectedMinute = value % 60,
+                                  ),
+                                  label: (index) =>
+                                      (index % 60).toString().padLeft(2, '0'),
+                                  isSelected: (index) =>
+                                      selectedMinute == index % 60,
                                 ),
-                              ),
-                              const SizedBox(width: 15),
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: CupertinoPicker.builder(
-                                        scrollController: minuteController,
-                                        itemExtent: 30,
-                                        diameterRatio: 100,
-                                        squeeze: 1,
-                                        selectionOverlay: selectionLine(),
-                                        onSelectedItemChanged: (value) =>
-                                            setModalState(
-                                              () => selectedMinute = value % 60,
-                                            ),
-                                        itemBuilder: (_, index) => Center(
-                                          child: Text(
-                                            '${index % 60}',
-                                            style: pickerTextStyle(
-                                              selectedMinute == index % 60,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    // Figma: 숫자 ↔ 단위 간격 25
-                                    const SizedBox(width: 25),
-                                    const Expanded(
-                                      child: Center(
-                                        child: Text(
-                                          '분',
-                                          style: TextStyle(
-                                            color: Colors.black,
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                pickerColumn(
+                                  controller: periodController,
+                                  childCount: 2,
+                                  offAxisFraction: 0.4,
+                                  onSelected: (value) => setModalState(
+                                    () => selectedPeriod = value,
+                                  ),
+                                  label: (index) => index == 0 ? 'AM' : 'PM',
+                                  isSelected: (index) =>
+                                      selectedPeriod == index,
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -2287,51 +2257,56 @@ class _MyPageScreenState extends State<MyPageScreen> {
             ),
           ),
           const SizedBox(width: 16),
+          // Figma처럼 한 줄로 표시하고, 기기 폭이 모자라면 줄바꿈 대신 살짝 축소한다.
           Expanded(
-            child: Text.rich(
-              nextTier.remaining == 0
-                  ? TextSpan(
-                      children: [
-                        const TextSpan(text: '최고 등급('),
-                        TextSpan(
-                          text: nextTier.label,
-                          style: const TextStyle(
-                            color: _appMutedGreen,
-                            fontWeight: FontWeight.w700,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text.rich(
+                nextTier.remaining == 0
+                    ? TextSpan(
+                        children: [
+                          const TextSpan(text: '최고 등급('),
+                          TextSpan(
+                            text: nextTier.label,
+                            style: const TextStyle(
+                              color: _appMutedGreen,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const TextSpan(text: ')을 달성했어요'),
-                      ],
-                    )
-                  : TextSpan(
-                      children: [
-                        const TextSpan(text: '다음 등급('),
-                        TextSpan(
-                          text: nextTier.label,
-                          style: const TextStyle(
-                            color: _appMutedGreen,
-                            fontWeight: FontWeight.w700,
+                          const TextSpan(text: ')을 달성했어요'),
+                        ],
+                      )
+                    : TextSpan(
+                        children: [
+                          const TextSpan(text: '다음 등급('),
+                          TextSpan(
+                            text: nextTier.label,
+                            style: const TextStyle(
+                              color: _appMutedGreen,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const TextSpan(text: ')까지 남은 공유 횟수 '),
-                        TextSpan(
-                          text: '${nextTier.remaining}',
-                          style: const TextStyle(
-                            color: _appMutedGreen,
-                            fontWeight: FontWeight.w700,
+                          const TextSpan(text: ')까지 남은 공유 횟수 '),
+                          TextSpan(
+                            text: '${nextTier.remaining}',
+                            style: const TextStyle(
+                              color: _appMutedGreen,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const TextSpan(text: '회'),
-                      ],
-                    ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                height: 25 / 13,
+                          const TextSpan(text: '회'),
+                        ],
+                      ),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  height: 25 / 13,
+                ),
               ),
             ),
           ),
@@ -2649,13 +2624,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         child: AnimatedOpacity(
                           duration: const Duration(milliseconds: 180),
                           opacity: _notificationBusy ? 0.45 : 1,
+                          // 알림 시각은 회색조 대신 앱 강조 녹색으로 표시한다.
                           child: Text(
                             formattedTime,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w400,
                               height: 19 / 16,
-                              color: Color(0xFFBDBDBD),
+                              color: _appMutedGreen,
                             ),
                           ),
                         ),
@@ -2788,7 +2764,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         excludeFromSemantics: true,
       ),
       title: '힐링 하이는 어떠셨나요?',
-      message: '힐링 하이가 도움이 되었다면\n스토어에 리뷰를 남겨 주세요.',
+      message: '여러분의 리뷰 한마디가\n힐링 하이를 더 좋은 서비스로 성장시켜요.',
       primaryLabel: '리뷰 남기기',
       secondaryLabel: '다음에',
     );

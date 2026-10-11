@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:like_button/like_button.dart';
+import 'card_heart_icon.dart';
 import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
 import 'typographic_quotes.dart';
@@ -1225,16 +1226,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   dotPrimaryColor: _likeActive,
                   dotSecondaryColor: Color(0xFFFFB3B3),
                 ),
+                // 해제 시에도 애니메이션이 보이도록 전용 아이콘을 쓴다.
                 likeBuilder: (bool isLiked) {
                   return Center(
-                    child: SvgPicture.asset(
-                      'assets/icon/figma_card_heart.svg',
-                      width: 23,
-                      height: 19,
-                      colorFilter: isLiked
-                          ? const ColorFilter.mode(_likeActive, BlendMode.srcIn)
-                          : null,
-                    ),
+                    child: CardHeartIcon(isLiked: isLiked, identity: quoteId),
                   );
                 },
                 onTap: (bool isLiked) async {
