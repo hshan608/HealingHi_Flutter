@@ -1,10 +1,13 @@
-name: Supabase Keep Alive
+﻿name: Supabase Keep Alive
 
 on:
   schedule:
-    # GitHub Actions가 몰리는 정각을 피해 매주 수요일과 토요일에 실행
-    - cron: '17 3 * * 3,6'
+    # Every six hours: 06:17, 12:17, 18:17, 00:17 KST.
+    - cron: '17 3,9,15,21 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: supabase-keep-alive
@@ -14,56 +17,28 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_KEY }}
     steps:
-      - name: Validate Supabase secrets
-        shell: bash
-        run: |
-          if [[ -z "$SUPABASE_URL" ]]; then
-            echo "::error::Repository secret SUPABASE_URL is missing."
-            exit 1
-          fi
-          if [[ -z "$SUPABASE_ANON_KEY" ]]; then
-            echo "::error::Repository secret SUPABASE_KEY is missing."
-            exit 1
-          fi
-          if [[ "$SUPABASE_URL" != https://*.supabase.co ]]; then
-            echo "::error::SUPABASE_URL must be a valid https://*.supabase.co URL."
-            exit 1
-          fi
-
-      - name: Send a request to Supabase
-        shell: bash
-        run: |
-          curl \
-            --fail-with-body \
-            --silent \
-            --show-error \
-            --retry 5 \
-            --retry-all-errors \
-            --retry-delay 10 \
-            --connect-timeout 20 \
-            --max-time 90 \
-            --request GET \
-            "$SUPABASE_URL/rest/v1/quotes?select=id&limit=1" \
-            --header "apikey: $SUPABASE_ANON_KEY" \
-            --header "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            --header "Accept: application/json"
-          echo
-          echo "Supabase keep-alive request succeeded."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Query the database with bounded retries
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || secrets.SUPABASE_KEY }}
+        run: python3 scripts/supabase_healthcheck.py check
 
   keep-schedule-enabled:
-    needs: ping
-    if: ${{ always() && github.event_name == 'schedule' }}
+    # Independent of database health; continue even when the project is down.
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Check out latest default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
 
       - name: Record repository activity when inactive for 30 days
@@ -83,4 +58,28 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/keep-alive-heartbeat.txt
           git commit -m 'chore: keep scheduled workflows active [skip ci]'
-          git push
+          # Rebase onto concurrent human commits; never force-push.
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            if (( attempt < 3 )); then
+              sleep 5
+              git pull --rebase
+            fi
+          done
+          echo "::error::Repository activity update failed. Check branch protection and Actions write permissions."
+          exit 1
+
+  report:
+    needs: [ping, keep-schedule-enabled]
+    if: ${{ always() && github.ref_name == github.event.repository.default_branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Report the entire run to the independent monitor
+        env:
+          KEEPALIVE_HEARTBEAT_URL: ${{ secrets.KEEPALIVE_HEARTBEAT_URL }}
+          KEEPALIVE_RESULT: ${{ needs.ping.result == 'success' && needs.keep-schedule-enabled.result == 'success' && 'success' || 'failure' }}
+        run: python3 scripts/supabase_healthcheck.py report
