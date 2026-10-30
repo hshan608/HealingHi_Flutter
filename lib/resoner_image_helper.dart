@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import 'dart:convert';
 
 class ResonerImageHelper {
   static Map<String, String>? _cache; // 파일명 -> asset 경로
@@ -12,12 +11,10 @@ class ResonerImageHelper {
   static Future<void> load() async {
     if (_cache != null) return;
     try {
-      final manifest =
-          json.decode(await rootBundle.loadString('AssetManifest.json'))
-              as Map<String, dynamic>;
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
       final cache = <String, String>{};
       final nameIndex = <String, String>{};
-      for (final path in manifest.keys) {
+      for (final path in manifest.listAssets()) {
         if (path.startsWith('assets/resoner/')) {
           final fileName = path.split('/').last;
           cache[fileName] = path;

@@ -174,7 +174,7 @@ MCP 서버는 세션마다 인증이 필요하다. 인증 전에는 DB 스키마
 
 ### 저자 이미지
 
-`assets/resoner/`에 182개 PNG가 있다. `ResonerImageHelper`가 `AssetManifest.json`을 읽어 파일명 인덱스를 만들고, `resolve(imageFile, resonerEng)`로 경로를 얻는다. 해석 순서는 영문명 정확 일치 → `imagefile` 필드 → 부분 일치이며, **같은 저자가 화면마다 다른 이미지로 보이지 않도록 영문명 기준 대표 이미지를 우선한다**(`test/widget_test.dart`의 Saint-Exupéry / Sun Tzu 케이스가 이 동작을 고정한다).
+`assets/resoner/`에 182개 PNG가 있다. `ResonerImageHelper`가 `AssetManifest.loadFromAssetBundle()`로 자산 목록을 읽어 파일명 인덱스를 만들고(최신 Flutter는 `AssetManifest.json`을 생성하지 않는다), `resolve(imageFile, resonerEng)`로 경로를 얻는다. 해석 순서는 영문명 정확 일치 → `imagefile` 필드 → 부분 일치이며, **같은 저자가 화면마다 다른 이미지로 보이지 않도록 영문명 기준 대표 이미지를 우선한다**(`test/widget_test.dart`의 Saint-Exupéry / Sun Tzu 케이스가 이 동작을 고정한다).
 
 ### 알림
 
