@@ -758,8 +758,8 @@ class _QuoteRequestPageState extends State<_QuoteRequestPage> {
     await showAppNoticePopup(
       context,
       barrierDismissible: false,
-      icon: Image.asset(
-        'assets/icon/quote_request_received.png',
+      icon: SvgPicture.asset(
+        'assets/icon/quote_request_received.svg',
         width: 30,
         height: 30,
         fit: BoxFit.contain,
@@ -1456,21 +1456,16 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Future<TimeOfDay?> _showNotificationTimePicker() async {
-    var selectedPeriod = _notificationTime.hour >= 12 ? 1 : 0;
-    var selectedHour = _notificationTime.hour % 12;
-    if (selectedHour == 0) selectedHour = 12;
+    var selectedHour = _notificationTime.hour;
     var selectedMinute = _notificationTime.minute;
-    final periodController = FixedExtentScrollController(
-      initialItem: selectedPeriod,
-    );
     final hourController = FixedExtentScrollController(
-      initialItem: 1200 + selectedHour - 1,
+      initialItem: 2400 + selectedHour,
     );
     final minuteController = FixedExtentScrollController(
       initialItem: 6000 + selectedMinute,
     );
 
-    // Figma PopUP Reference(iOS 휠 피커) 양식: 시 | 분 | AM/PM 세 열.
+    // Figma PopUP Reference(iOS 휠 피커) 양식을 24시간제로 바꾼 시 | 분 두 열.
     // 선택 행은 열 전체를 가로지르는 띠(위아래 구분선)로 표시하고,
     // 위아래 항목은 원통형 휠 원근으로 흐려지며 작아진다.
     const pickerItemExtent = 34.0;
@@ -1553,8 +1548,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         child: Column(
                           children: [
                             const SizedBox(height: 4),
-                            Image.asset(
-                              'assets/alarm_bell.png',
+                            SvgPicture.asset(
+                              'assets/icon/alarm_bell.svg',
                               width: 30,
                               height: 30,
                             ),
@@ -1594,22 +1589,25 @@ class _MyPageScreenState extends State<MyPageScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                // 시: 1~12 무한 반복. 왼쪽 열이라 원통 바깥쪽으로 기운다.
+                                // 시: 00~23 두 자리, 무한 반복. 두 열이 중앙을
+                                // 사이에 두고 원통 바깥쪽으로 기운다.
                                 pickerColumn(
                                   controller: hourController,
                                   childCount: null,
-                                  offAxisFraction: -0.4,
+                                  offAxisFraction: -0.2,
                                   onSelected: (value) => setModalState(
-                                    () => selectedHour = value % 12 + 1,
+                                    () => selectedHour = value % 24,
                                   ),
-                                  label: (index) => '${index % 12 + 1}',
+                                  label: (index) =>
+                                      (index % 24).toString().padLeft(2, '0'),
                                   isSelected: (index) =>
-                                      selectedHour == index % 12 + 1,
+                                      selectedHour == index % 24,
                                 ),
                                 // 분: 00~59 두 자리, 무한 반복
                                 pickerColumn(
                                   controller: minuteController,
                                   childCount: null,
+                                  offAxisFraction: 0.2,
                                   onSelected: (value) => setModalState(
                                     () => selectedMinute = value % 60,
                                   ),
@@ -1617,17 +1615,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                       (index % 60).toString().padLeft(2, '0'),
                                   isSelected: (index) =>
                                       selectedMinute == index % 60,
-                                ),
-                                pickerColumn(
-                                  controller: periodController,
-                                  childCount: 2,
-                                  offAxisFraction: 0.4,
-                                  onSelected: (value) => setModalState(
-                                    () => selectedPeriod = value,
-                                  ),
-                                  label: (index) => index == 0 ? 'AM' : 'PM',
-                                  isSelected: (index) =>
-                                      selectedPeriod == index,
                                 ),
                               ],
                             ),
@@ -1644,18 +1631,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               Expanded(
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () {
-                                    final hour = selectedPeriod == 0
-                                        ? selectedHour % 12
-                                        : (selectedHour % 12) + 12;
-                                    Navigator.pop(
-                                      dialogContext,
-                                      TimeOfDay(
-                                        hour: hour,
-                                        minute: selectedMinute,
-                                      ),
-                                    );
-                                  },
+                                  onTap: () => Navigator.pop(
+                                    dialogContext,
+                                    TimeOfDay(
+                                      hour: selectedHour,
+                                      minute: selectedMinute,
+                                    ),
+                                  ),
                                   child: const Center(
                                     child: Text(
                                       '확인',
@@ -1701,7 +1683,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
       },
     );
 
-    periodController.dispose();
     hourController.dispose();
     minuteController.dispose();
     return result;
@@ -1899,7 +1880,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Expanded(
+          Flexible(
             child: Text(
               title,
               style: const TextStyle(
@@ -1910,7 +1891,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
               ),
             ),
           ),
-          if (onHelp != null)
+          if (onHelp != null) ...[
+            const SizedBox(width: 4),
+            // 터치 영역은 20×20을 유지하고 아이콘만 20% 축소(16)한다.
             IconButton(
               key: helpKey,
               onPressed: onHelp,
@@ -1923,10 +1906,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
               ),
               icon: SvgPicture.asset(
                 'assets/icon/figma_help.svg',
-                width: 20,
-                height: 20,
+                width: 16,
+                height: 16,
+                colorFilter: const ColorFilter.mode(
+                  Color(0xFFA3A3A3),
+                  BlendMode.srcIn,
+                ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -2756,8 +2744,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
   Future<void> _showReviewPopup() async {
     final action = await showAppNoticePopup(
       context,
-      icon: Image.asset(
-        'assets/icon/review_store.png',
+      icon: SvgPicture.asset(
+        'assets/icon/review_store.svg',
         width: 30,
         height: 30,
         fit: BoxFit.contain,

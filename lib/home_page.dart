@@ -22,9 +22,16 @@ final supabase = Supabase.instance.client;
 
 // 메인 화면
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.onInterstitialRequested});
+  const HomeScreen({
+    super.key,
+    required this.onInterstitialRequested,
+    this.isTutorialActive = false,
+  });
 
   final VoidCallback onInterstitialRequested;
+
+  // 홈 튜토리얼이 표시되는 동안 강조 대상(0번 카드)이 화면에 있도록 목록을 맨 위로 둔다.
+  final bool isTutorialActive;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -55,9 +62,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isTutorialActive && !oldWidget.isTutorialActive) {
+      _scrollQuotesToTop();
+    }
+  }
+
+  @override
   void dispose() {
     _quoteScrollController.dispose();
     super.dispose();
+  }
+
+  // 튜토리얼 강조 키는 0번 카드에만 붙는다. 튜토리얼 진행 상태를 불러오는 동안 목록을
+  // 내렸다면 0번 카드가 해제되어 강조 영역이 버튼이 아닌 기본 좌표에 그려지므로,
+  // 튜토리얼이 뜰 때 맨 위로 되돌린다. 빌드 중 스크롤을 피하려고 다음 프레임에 실행한다.
+  void _scrollQuotesToTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_quoteScrollController.hasClients) return;
+      final position = _quoteScrollController.position;
+      if (position.pixels != position.minScrollExtent) {
+        _quoteScrollController.jumpTo(position.minScrollExtent);
+      }
+    });
   }
 
   String _interstitialKey(int quoteIndex, ScrollDirection direction) {
@@ -180,8 +208,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       await showAppNoticePopup(
         context,
-        icon: Image.asset(
-          'assets/icon/quote_published.png',
+        icon: SvgPicture.asset(
+          'assets/icon/quote_published.svg',
           width: 30,
           height: 30,
           fit: BoxFit.contain,

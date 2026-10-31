@@ -1107,8 +1107,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// 원형 배경을 포함한 주제 태그 원본 이미지.
   Widget _buildSubjectIcon({required double size}) {
-    return Image.asset(
-      'assets/icon/search_subject.png',
+    return SvgPicture.asset(
+      'assets/icon/search_subject.svg',
       width: size,
       height: size,
       fit: BoxFit.contain,
