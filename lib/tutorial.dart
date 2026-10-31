@@ -141,7 +141,10 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshTarget());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollStepIntoView();
+      _refreshTarget();
+    });
     _targetRefreshTimer = Timer.periodic(
       const Duration(milliseconds: 120),
       (_) => _refreshTarget(),
@@ -155,7 +158,45 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         oldWidget.stepIndex != widget.stepIndex) {
       _measuredTarget = null;
       _refreshTarget();
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollStepIntoView(),
+      );
     }
+  }
+
+  /// 강조 대상 아래쪽이 스크롤 영역 밖(하단 메뉴 밑)에 있으면 여백 16을 두고 보이게 올린다.
+  /// 오버레이가 120ms마다 위치를 다시 재므로 스크롤 중에도 강조 영역이 따라간다.
+  void _scrollStepIntoView() {
+    if (!mounted) return;
+    final steps = _stepsFor(widget.section);
+    final step = steps[widget.stepIndex.clamp(0, steps.length - 1)];
+    final targetContext = step.scrollIntoViewKey?.currentContext;
+    if (targetContext == null) return;
+    final scrollable = Scrollable.maybeOf(targetContext);
+    final targetBox = targetContext.findRenderObject() as RenderBox?;
+    final viewportBox = scrollable?.context.findRenderObject() as RenderBox?;
+    if (scrollable == null ||
+        targetBox == null ||
+        viewportBox == null ||
+        !targetBox.hasSize ||
+        !viewportBox.hasSize) {
+      return;
+    }
+    // 같은 스케일 트리 안의 상대 좌표라 AppScale 배율의 영향을 받지 않는다.
+    final targetBottom = targetBox
+        .localToGlobal(Offset(0, targetBox.size.height), ancestor: viewportBox)
+        .dy;
+    final overflow = targetBottom + 16 - viewportBox.size.height;
+    if (overflow <= 0) return;
+    final position = scrollable.position;
+    position.animateTo(
+      (position.pixels + overflow).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -198,14 +239,18 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       combined.right,
       combined.bottom - step.targetBottomInset,
     );
-    var padded = _applyMinSize(
-      adjusted.inflate(step.targetPadding),
-      step.minTargetSize,
-    );
+    final fixedSize = step.fixedTargetSize;
+    var padded = fixedSize != null
+        ? Rect.fromCenter(
+            center: adjusted.center,
+            width: fixedSize.width,
+            height: fixedSize.height,
+          )
+        : adjusted.inflate(step.targetPadding);
     // 경계 위젯이 지정된 단계는 패딩까지 포함한 강조 영역을 그 위젯 사각형 안으로 제한한다.
     final bounds = _measureBounds(step.boundsKey, overlayBox);
     if (bounds != null) {
-      padded = padded.intersect(bounds);
+      padded = padded.intersect(step.boundsInsets.deflateRect(bounds));
     }
     final clipped = padded.intersect(Offset.zero & overlayBox.size);
     return clipped.isEmpty ? null : clipped;
@@ -222,15 +267,6 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       boundsBox.localToGlobal(Offset.zero),
     );
     return localTopLeft & boundsBox.size;
-  }
-
-  /// 측정된 사각형을 중심 고정으로 [minSize] 이상으로 키운다.
-  /// 하트·공유처럼 위젯 자체 크기가 다른 버튼도 같은 크기의 강조 영역을 갖게 한다.
-  static Rect _applyMinSize(Rect rect, Size? minSize) {
-    if (minSize == null) return rect;
-    final width = rect.width < minSize.width ? minSize.width : rect.width;
-    final height = rect.height < minSize.height ? minSize.height : rect.height;
-    return Rect.fromCenter(center: rect.center, width: width, height: height);
   }
 
   @override
@@ -287,9 +323,9 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
                       onPressed: widget.onNext,
                     ),
                   ),
-                  // 건너뛰기는 항상 최상위에 둔다. 프로필 1단계처럼 강조 영역이
-                  // 화면 상단 전체 폭을 덮는 경우 밝은 구멍 안에 놓이므로,
-                  // 어두운 배경 위에서도 밝은 배경 위에서도 읽히는 진한 알약 배경을 쓴다.
+                  // 건너뛰기는 항상 최상위에 둔다. 프로필 화면처럼 상단 문구가 버튼
+                  // 아래까지 이어지는 경우 반투명 배경이면 글자가 비쳐 문구가 버튼
+                  // 위에 있는 것처럼 보이므로, 아래가 비치지 않는 불투명 배경을 쓴다.
                   Positioned(
                     top: safeTop + 10,
                     right: 14,
@@ -298,7 +334,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
                       onPressed: widget.onSkip,
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white,
-                        backgroundColor: Colors.black.withValues(alpha: 0.6),
+                        backgroundColor: const Color(0xFF292929),
                         shape: const StadiumBorder(),
                       ),
                       child: const Text('건너뛰기'),
@@ -467,8 +503,10 @@ class _TutorialStep {
     required this.calloutTop,
     this.targetPadding = 0,
     this.targetBottomInset = 0,
-    this.minTargetSize,
+    this.fixedTargetSize,
     this.boundsKey,
+    this.boundsInsets = EdgeInsets.zero,
+    this.scrollIntoViewKey,
   });
 
   final String title;
@@ -479,16 +517,47 @@ class _TutorialStep {
   final double targetPadding;
   final double targetBottomInset;
 
-  /// 강조 영역의 최소 크기. 측정값이 이보다 작으면 중심을 유지한 채 확장한다.
-  final Size? minTargetSize;
+  /// 강조 영역을 측정 사각형의 중심 기준 이 크기로 고정한다. 지정하면 [targetPadding]은
+  /// 쓰지 않는다. 위젯 자체 크기가 달라도(홈 하트 `LikeButton`은 빈 카운트 영역 때문에
+  /// 23×32로 측정된다) 버튼마다 같은 영역이 그려진다.
+  final Size? fixedTargetSize;
 
   /// 강조 영역(패딩 포함)을 이 위젯의 사각형 안으로 제한한다. 없으면 제한하지 않는다.
   final GlobalKey? boundsKey;
+
+  /// [boundsKey] 사각형을 이만큼 안쪽으로 줄여 경계로 쓴다.
+  /// 강조 테두리가 경계선에 딱 붙으면 경계 밖으로 번져 보이므로 여백을 둔다.
+  final EdgeInsets boundsInsets;
+
+  /// 단계가 시작될 때 이 위젯의 아래쪽이 스크롤 영역 안에 들어오도록 스크롤한다.
+  /// 대상이 하단 메뉴 밑으로 잘리는 단계에 쓴다. 없으면 스크롤하지 않는다.
+  final GlobalKey? scrollIntoViewKey;
 }
 
-/// 홈 카드의 하트·공유 버튼 강조 영역 공통 크기.
-/// 두 버튼의 위젯 크기(23×23, 18×20)가 달라도 같은 크기로 강조되도록 고정한다.
-const Size _homeActionTargetSize = Size(44, 44);
+/// 카드 하트·공유 버튼 강조 영역 공통 크기.
+/// 홈 하트(측정 23×32)·공유(18×20)와 보관함 하트(23×19)처럼 위젯 크기가 달라도
+/// 화면과 관계없이 버튼 중심 기준 같은 크기로 강조되도록 고정한다.
+const Size _cardActionTargetSize = Size(44, 44);
+
+/// 명언 카드의 하트·공유 버튼 단계. 홈과 보관함이 같은 강조 영역·안내 위치를
+/// 갖도록 버튼 단계는 모두 이 함수로 만든다. [fallbackTopLeft]는 측정 전 기본 위치다.
+_TutorialStep _cardActionStep({
+  required String title,
+  required String description,
+  required GlobalKey targetKey,
+  required Offset Function(Size size, double safeTop) fallbackTopLeft,
+}) {
+  return _TutorialStep(
+    title: title,
+    description: description,
+    targetKeys: <GlobalKey>[targetKey],
+    fallbackTarget: (size, safeTop) =>
+        fallbackTopLeft(size, safeTop) & _cardActionTargetSize,
+    fixedTargetSize: _cardActionTargetSize,
+    calloutTop: (size, safeTop, target) =>
+        _fitCalloutTop(target.bottom + 20, size, safeTop),
+  );
+}
 
 List<_TutorialStep> _stepsFor(TutorialSection section) {
   switch (section) {
@@ -504,35 +573,19 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 16, size, safeTop),
         ),
-        _TutorialStep(
+        _cardActionStep(
           title: '마음에 남는 명언을 보관해요.',
           description: '하트를 누르면 언제든 다시 꺼내 볼 수 있어요.',
-          targetKeys: <GlobalKey>[TutorialTargets.homeLike],
-          fallbackTarget: (size, safeTop) => Rect.fromLTWH(
-            size.width - 152,
-            safeTop + 218,
-            _homeActionTargetSize.width,
-            _homeActionTargetSize.height,
-          ),
-          targetPadding: 6,
-          minTargetSize: _homeActionTargetSize,
-          calloutTop: (size, safeTop, target) =>
-              _fitCalloutTop(target.bottom + 20, size, safeTop),
+          targetKey: TutorialTargets.homeLike,
+          fallbackTopLeft: (size, safeTop) =>
+              Offset(size.width - 152, safeTop + 218),
         ),
-        _TutorialStep(
+        _cardActionStep(
           title: '좋은 명언을 함께 나눠요.',
           description: '공유 버튼을 눌러 소중한 사람에게 문장을 전해보세요.',
-          targetKeys: <GlobalKey>[TutorialTargets.homeShare],
-          fallbackTarget: (size, safeTop) => Rect.fromLTWH(
-            size.width - 88,
-            safeTop + 218,
-            _homeActionTargetSize.width,
-            _homeActionTargetSize.height,
-          ),
-          targetPadding: 6,
-          minTargetSize: _homeActionTargetSize,
-          calloutTop: (size, safeTop, target) =>
-              _fitCalloutTop(target.bottom + 20, size, safeTop),
+          targetKey: TutorialTargets.homeShare,
+          fallbackTopLeft: (size, safeTop) =>
+              Offset(size.width - 88, safeTop + 218),
         ),
       ];
     case TutorialSection.search:
@@ -571,20 +624,22 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
           fallbackTarget: (size, safeTop) =>
               Rect.fromLTWH(size.width * 0.625 - 32, size.height - 70, 64, 62),
           targetPadding: 8,
-          // 패딩이 하단 바 위쪽 본문 영역으로 침범하지 않도록 바 안으로 제한한다.
+          // 탭 사각형은 하단 바에서 시스템 인셋을 뺀 콘텐츠 높이 전체다. 아래쪽 패딩은
+          // 상쇄해 탭 끝(홈 인디케이터 위)에서 멈추고, 위쪽은 바 상단에서 4 안쪽으로
+          // 제한해 강조 테두리가 본문과의 경계선에 붙지 않게 한다.
+          // 결과적으로 아이콘 위·라벨 아래 여백이 비슷해진다.
+          targetBottomInset: 8,
           boundsKey: TutorialTargets.bottomNavBar,
+          boundsInsets: const EdgeInsets.only(top: 4),
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.top - 190, size, safeTop),
         ),
-        _TutorialStep(
+        _cardActionStep(
           title: '원할 때 보관을 해제할 수 있어요.',
           description: '하트를 다시 누르면 해당 명언이 보관함에서 제외돼요.',
-          targetKeys: <GlobalKey>[TutorialTargets.bookmarkLike],
-          fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(size.width - 152, safeTop + 225, 58, 58),
-          targetPadding: 6,
-          calloutTop: (size, safeTop, target) =>
-              _fitCalloutTop(target.bottom + 20, size, safeTop),
+          targetKey: TutorialTargets.bookmarkLike,
+          fallbackTopLeft: (size, safeTop) =>
+              Offset(size.width - 145, safeTop + 232),
         ),
       ];
     case TutorialSection.profile:
@@ -611,17 +666,22 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
             TutorialTargets.profileAchievement,
           ],
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(20, safeTop + 345, size.width - 40, 155),
+              Rect.fromLTWH(20, safeTop + 500, size.width - 40, 263),
           targetPadding: 4,
+          // 공유 달성도가 하단 메뉴 밑으로 잘리지 않도록 끝까지 보이게 스크롤한다.
+          scrollIntoViewKey: TutorialTargets.profileAchievement,
+          // 강조 영역이 화면 아래쪽에 있어 아래에 두면 영역과 겹치므로,
+          // 영역 위쪽(화면 중앙부)에 안내를 띄운다.
           calloutTop: (size, safeTop, target) =>
-              _fitCalloutTop(target.bottom + 16, size, safeTop),
+              _fitCalloutTop(target.top - 190, size, safeTop),
         ),
         _TutorialStep(
           title: '함께 나누는 사람들을 만나보세요.',
           description: '다른 사람들의 공유 활동을 확인하고, 함께 더 많은 명언을 나눠보세요.',
           targetKeys: <GlobalKey>[TutorialTargets.profileLeaderboard],
+          // 아이콘이 "공유 등급" 제목 바로 옆에 붙는다(좌측 26 + 제목 폭 약 77 + 간격 4).
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(size.width - 56, safeTop + 345, 20, 20),
+              Rect.fromLTWH(107, safeTop + 345, 20, 20),
           targetPadding: 10,
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.bottom + 20, size, safeTop),

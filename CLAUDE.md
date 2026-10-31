@@ -64,6 +64,7 @@ dart format lib/            # `flutter format`은 제거된 명령이다
 | `quote_share.dart` | 명언 카드 이미지 캡처·공유 공용 로직(`QuoteShare`, `QuoteShareCard`). 홈·보관함이 함께 사용 |
 | `app_popup.dart` | Figma 400×241 공용 안내 팝업(`AppNoticePopup`, `showAppNoticePopup`). 신청 완료·리뷰 확인·신청 승인 알림에 사용 |
 | `ad_helper.dart`, `nickname_generator.dart` | AdMob 유닛 ID, 결정적 닉네임 생성 |
+| `card_heart_icon.dart` | `CardHeartIcon` — 홈·검색 카드 하트 아이콘. `LikeButton`은 보관 시에만 효과를 그리므로 해제(활성→비활성) 애니메이션을 여기서 재생한다. `likeBuilder` 안에서 쓰고 `identity`에 명언 ID를 넘긴다 |
 | `rank_medal.dart` | `AnimatedRankMedal` — 공유 랭킹 1~3위 메달(`assets/{n}_rank.png`) 흔들림 애니메이션. `disableAnimations`면 정지 이미지 |
 | `image_mime.dart` | 업로드 이미지 확장자 → 표준 MIME 변환(`ImageMime`). Storage 업로드의 `contentType`은 반드시 이걸로 만든다 |
 | `responsive.dart` | `AppScale` — 앱 루트 비율 스케일(아래 "반응형 스케일" 절) |
@@ -169,7 +170,9 @@ MCP 서버는 세션마다 인증이 필요하다. 인증 전에는 DB 스키마
 
 - 진행 상태는 `users.tutorial_progress`(jsonb)에 `TutorialSection.storageKey`(`home_v1` 등) 단위로 저장된다. 내용을 개편하면 키 버전을 올려 다시 노출시킨다.
 - 강조 영역은 `TutorialTargets`의 `GlobalKey`로 실제 위젯 위치를 측정해 그린다. 대상 위젯을 옮기거나 키를 떼면 하드코딩된 `fallbackTarget` 사각형으로 떨어진다.
-- 단계에 `boundsKey`를 주면 패딩까지 포함한 강조 영역이 그 위젯 사각형 안으로 잘린다. 보관함 탭 단계가 `TutorialTargets.bottomNavBar`(하단 바 컨테이너)를 경계로 써서 본문 쪽으로 침범하지 않는다.
+- 카드 버튼 단계(홈 하트·공유, 보관함 하트)는 `_cardActionStep()`으로만 만든다. `fixedTargetSize`로 강조 영역을 버튼 중심 기준 44×44로 고정해, 측정 크기가 달라도(홈 `LikeButton`은 빈 카운트 영역 때문에 23×32) 같은 영역이 그려진다.
+- 강조 키는 목록의 0번 카드에만 붙는다. 0번 카드가 스크롤로 해제되면 `fallbackTarget` 고정 좌표에 그려져 버튼과 어긋나므로, 홈은 `HomeScreen.isTutorialActive`가 켜질 때 목록을 맨 위로 되돌리고 보관함은 예시 카드를 맨 위에 넣는다.
+- 단계에 `boundsKey`를 주면 패딩까지 포함한 강조 영역이 그 위젯 사각형 안으로 잘린다. `boundsInsets`로 경계를 안쪽으로 더 줄일 수 있다. 보관함 탭 단계는 `TutorialTargets.bottomNavBar`(하단 바 컨테이너)를 경계로 쓰고 위쪽을 4 줄여, 강조 테두리가 바 상단 경계선에 붙어 본문 쪽으로 번져 보이지 않게 한다.
 - **단계 수가 두 곳에 중복 정의되어 있다** — `main.dart`의 `_tutorialStepCount()`와 `tutorial.dart`의 `_stepsFor()`. 단계를 추가·삭제할 때 둘을 함께 고쳐야 하며, 어긋나면 마지막 단계가 잘리거나 진행이 멈춘다.
 
 ### 저자 이미지

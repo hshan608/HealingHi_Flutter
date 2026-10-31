@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:like_button/like_button.dart';
+import 'card_heart_icon.dart';
 import 'installation_identity.dart';
 import 'resoner_image_helper.dart';
 import 'typographic_quotes.dart';
@@ -792,7 +793,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     _showQuotesBottomSheet(
       title: subject,
-      leading: _buildSubjectIcon(size: 73, iconSize: 40),
+      leading: _buildSubjectIcon(size: 73),
       quotes: subjectQuotes,
       authorOf: (quote) => quote['resoner_kr']?.toString() ?? '',
     );
@@ -991,7 +992,7 @@ class _SearchScreenState extends State<SearchScreen> {
       leading: SizedBox(
         width: 60,
         height: 59,
-        child: Center(child: _buildSubjectIcon(size: 59, iconSize: 32)),
+        child: Center(child: _buildSubjectIcon(size: 59)),
       ),
       title: subject,
     );
@@ -1104,16 +1105,14 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// 주제 아이콘. Figma는 녹색 태그 벡터이나 동일 SVG 자산이 없어 Material 아이콘으로 대체.
-  Widget _buildSubjectIcon({required double size, required double iconSize}) {
-    return Container(
+  /// 원형 배경을 포함한 주제 태그 원본 이미지.
+  Widget _buildSubjectIcon({required double size}) {
+    return SvgPicture.asset(
+      'assets/icon/search_subject.svg',
       width: size,
       height: size,
-      decoration: const BoxDecoration(
-        color: _listItemBorder,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(Icons.local_offer_rounded, size: iconSize, color: _appGreen),
+      fit: BoxFit.contain,
+      excludeFromSemantics: true,
     );
   }
 
@@ -1227,16 +1226,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   dotPrimaryColor: _likeActive,
                   dotSecondaryColor: Color(0xFFFFB3B3),
                 ),
+                // 해제 시에도 애니메이션이 보이도록 전용 아이콘을 쓴다.
                 likeBuilder: (bool isLiked) {
                   return Center(
-                    child: SvgPicture.asset(
-                      'assets/icon/figma_card_heart.svg',
-                      width: 23,
-                      height: 19,
-                      colorFilter: isLiked
-                          ? const ColorFilter.mode(_likeActive, BlendMode.srcIn)
-                          : null,
-                    ),
+                    child: CardHeartIcon(isLiked: isLiked, identity: quoteId),
                   );
                 },
                 onTap: (bool isLiked) async {

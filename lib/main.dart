@@ -445,11 +445,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
-  // 보관함 튜토리얼 여부를 화면에 내려주기 위해 빌드 시점에 구성한다.
+  // 홈·보관함 튜토리얼 여부를 화면에 내려주기 위해 빌드 시점에 구성한다.
   Widget _buildCurrentScreen() {
     switch (_currentIndex) {
       case 0:
-        return HomeScreen(onInterstitialRequested: _requestInterstitial);
+        return HomeScreen(
+          onInterstitialRequested: _requestInterstitial,
+          isTutorialActive:
+              _shouldShowTutorial &&
+              _currentTutorialSection == TutorialSection.home,
+        );
       case 1:
         return const SearchScreen();
       case 2:

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:healing_hi/card_heart_icon.dart';
+import 'package:like_button/like_button.dart';
 import 'package:healing_hi/rank_medal.dart';
 import 'package:healing_hi/resoner_image_helper.dart';
 import 'package:healing_hi/tutorial.dart';
@@ -159,6 +161,288 @@ void main() {
     expect(shareRect.center, const Offset(300 + 18 / 2, 302 + 20 / 2));
   });
 
+  testWidgets('보관함 하트 강조 영역은 홈 하트·공유와 같은 크기다', (tester) async {
+    Future<Rect> highlightRectFor({
+      required TutorialSection section,
+      required int stepIndex,
+      required GlobalKey key,
+      required Size widgetSize,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                Positioned(
+                  left: 200,
+                  top: 300,
+                  width: widgetSize.width,
+                  height: widgetSize.height,
+                  child: SizedBox(key: key),
+                ),
+                TutorialOverlay(
+                  section: section,
+                  stepIndex: stepIndex,
+                  onNext: () {},
+                  onSkip: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+
+      final targetBorder = find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.border != null;
+      });
+      expect(targetBorder, findsOneWidget);
+      return tester.getRect(targetBorder);
+    }
+
+    final homeLike = await highlightRectFor(
+      section: TutorialSection.home,
+      stepIndex: 1,
+      key: TutorialTargets.homeLike,
+      widgetSize: const Size(23, 23),
+    );
+    // 보관함 하트는 SVG 23×19를 그대로 감싼 GestureDetector다.
+    final bookmarkLike = await highlightRectFor(
+      section: TutorialSection.bookmarks,
+      stepIndex: 1,
+      key: TutorialTargets.bookmarkLike,
+      widgetSize: const Size(23, 19),
+    );
+
+    expect(bookmarkLike.size, homeLike.size);
+    expect(bookmarkLike.center, const Offset(200 + 23 / 2, 300 + 19 / 2));
+  });
+
+  testWidgets('실제 홈 카드 버튼 구성에서도 하트·공유와 보관함 하트 강조 영역이 같다', (tester) async {
+    // 홈 카드 하단 버튼 행(home_page.dart)과 보관함 하트(like_page.dart)를 같은 구성으로
+    // 배치한다. LikeButton은 빈 카운트 영역 때문에 행 높이(32)까지 늘어나 23×32로 측정된다.
+    Widget cardActions() {
+      return Positioned(
+        left: 200,
+        top: 300,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 130,
+              height: 32,
+              child: Row(
+                children: [
+                  LikeButton(
+                    key: TutorialTargets.homeLike,
+                    size: 23,
+                    padding: EdgeInsets.zero,
+                    likeCountPadding: EdgeInsets.zero,
+                    isLiked: false,
+                    likeBuilder: (isLiked) => Center(
+                      child: CardHeartIcon(isLiked: isLiked, identity: 'q1'),
+                    ),
+                  ),
+                  const SizedBox(width: 70),
+                  IconButton(
+                    key: TutorialTargets.homeShare,
+                    onPressed: () {},
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 18,
+                      height: 20,
+                    ),
+                    style: IconButton.styleFrom(
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const SizedBox(width: 18, height: 20),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 100),
+            Row(
+              children: [
+                GestureDetector(
+                  key: TutorialTargets.bookmarkLike,
+                  onTap: () {},
+                  child: const SizedBox(width: 23, height: 19),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    Future<Rect> highlightRectFor(
+      TutorialSection section,
+      int stepIndex,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                cardActions(),
+                TutorialOverlay(
+                  key: ValueKey('$section-$stepIndex'),
+                  section: section,
+                  stepIndex: stepIndex,
+                  onNext: () {},
+                  onSkip: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+
+      final targetBorder = find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.border != null;
+      });
+      expect(targetBorder, findsOneWidget);
+      return tester.getRect(targetBorder);
+    }
+
+    final homeLike = await highlightRectFor(TutorialSection.home, 1);
+    final homeShare = await highlightRectFor(TutorialSection.home, 2);
+    final bookmarkLike = await highlightRectFor(TutorialSection.bookmarks, 1);
+
+    // 측정 크기가 버튼마다 다른 실제 상황이 재현되었는지 확인한다.
+    expect(
+      tester.getSize(find.byKey(TutorialTargets.homeLike)),
+      const Size(23, 32),
+    );
+    expect(
+      tester.getSize(find.byKey(TutorialTargets.bookmarkLike)),
+      const Size(23, 19),
+    );
+
+    // 세 버튼 모두 버튼 중심 기준 44×44로 같다.
+    expect(homeLike.size, const Size(44, 44));
+    expect(homeShare.size, const Size(44, 44));
+    expect(bookmarkLike.size, const Size(44, 44));
+    expect(
+      homeLike.center,
+      tester.getCenter(find.byKey(TutorialTargets.homeLike)),
+    );
+    expect(
+      homeShare.center,
+      tester.getCenter(find.byKey(TutorialTargets.homeShare)),
+    );
+    expect(
+      bookmarkLike.center,
+      tester.getCenter(find.byKey(TutorialTargets.bookmarkLike)),
+    );
+  });
+
+  testWidgets('프로필 공유 활동 단계 안내는 화면 아래쪽 강조 영역 위에 뜬다', (tester) async {
+    tester.view.physicalSize = const Size(411, 914);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              // 실제 프로필 화면처럼 공유 등급·달성도가 화면 아래쪽에 있다.
+              Positioned(
+                left: 20,
+                top: 610,
+                width: 371,
+                height: 100,
+                child: SizedBox(key: TutorialTargets.profileShareLevel),
+              ),
+              Positioned(
+                left: 20,
+                top: 748,
+                width: 371,
+                height: 110,
+                child: SizedBox(key: TutorialTargets.profileAchievement),
+              ),
+              TutorialOverlay(
+                section: TutorialSection.profile,
+                stepIndex: 1,
+                onNext: () {},
+                onSkip: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+
+    final targetBorder = find.byWidgetPredicate((widget) {
+      if (widget is! DecoratedBox) return false;
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration && decoration.border != null;
+    });
+    final highlight = tester.getRect(targetBorder);
+    final callout = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('나의 공유 활동을 확인해요.'),
+            matching: find.byType(Positioned),
+          )
+          .first,
+    );
+
+    // 안내가 강조 영역과 겹치지 않고 그 위(화면 중앙부)에 놓인다.
+    expect(callout.bottom, lessThanOrEqualTo(highlight.top));
+    expect(callout.top, greaterThan(914 * 0.3));
+  });
+
+  testWidgets('카드 하트는 해제될 때만 축소 애니메이션을 재생한다', (tester) async {
+    Future<void> pumpHeart(bool isLiked, Object identity) {
+      return tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: CardHeartIcon(isLiked: isLiked, identity: identity),
+          ),
+        ),
+      );
+    }
+
+    double currentScale() {
+      final transform = tester.widget<Transform>(
+        find.descendant(
+          of: find.byType(CardHeartIcon),
+          matching: find.byType(Transform),
+        ),
+      );
+      // Transform.scale은 z축을 1로 두므로 x축 배율만 읽는다.
+      return transform.transform.storage[0];
+    }
+
+    await pumpHeart(true, 'q1');
+    expect(currentScale(), 1.0);
+
+    // 같은 명언에서 해제: 중간에 크기가 줄었다가 끝나면 원래 크기로 돌아온다.
+    await pumpHeart(false, 'q1');
+    // 티커는 시작 다음 프레임부터 시간을 센다.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(currentScale(), lessThan(1.0));
+    await tester.pumpAndSettle();
+    expect(currentScale(), 1.0);
+
+    // 목록 갱신으로 다른 명언이 같은 자리에 온 경우는 재생하지 않는다.
+    await pumpHeart(true, 'q2');
+    await pumpHeart(false, 'q3');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(currentScale(), 1.0);
+  });
+
   testWidgets('보관함 탭 강조 영역은 하단 바 위로 침범하지 않는다', (tester) async {
     const barTop = 520.0;
     const barHeight = 80.0;
@@ -212,12 +496,12 @@ void main() {
 
     final highlight = tester.getRect(targetBorder);
     final tab = tester.getRect(find.byKey(TutorialTargets.bookmarkTab));
-    // 위쪽은 바 상단에 맞춰지고, 아래·좌우 패딩은 바 안에서 유지된다.
-    expect(highlight.top, barTop);
-    expect(highlight.bottom, tab.bottom + 8);
+    // 위쪽은 바 상단에서 4 안쪽에 머물러 본문과의 경계선에 붙지 않는다.
+    expect(highlight.top, barTop + 4);
+    // 아래쪽은 탭 끝(시스템 인셋 위)에서 멈추고, 좌우 패딩은 유지된다.
+    expect(highlight.bottom, tab.bottom);
     expect(highlight.left, tab.left - 8);
     expect(highlight.right, tab.right + 8);
-    expect(highlight.bottom, lessThanOrEqualTo(barTop + barHeight));
   });
 
   testWidgets('프로필 튜토리얼의 건너뛰기 버튼은 강조 영역 위 최상위에 놓인다', (tester) async {
@@ -273,6 +557,12 @@ void main() {
       find.descendant(of: find.byWidget(topChild), matching: skipButton),
       findsOneWidget,
     );
+
+    // 배경이 반투명이면 아래 상단 문구가 비쳐 버튼 위에 있는 것처럼 보이므로 불투명해야 한다.
+    final skipMaterial = tester.widget<Material>(
+      find.descendant(of: skipButton, matching: find.byType(Material)),
+    );
+    expect(skipMaterial.color?.a, 1.0);
 
     await tester.tap(skipButton);
     await tester.pump();
