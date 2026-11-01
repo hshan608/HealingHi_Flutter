@@ -2350,7 +2350,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         alignment: Alignment.bottomCenter,
         child: Column(
           children: [
-            _buildSheetHeaderHint('위로 올려 더 보기 / 아래로 내려 돌아가기'),
+            _buildSheetHeaderHint('아래로 내려 돌아가기'),
             const SizedBox(height: 20),
             Expanded(
               child: Container(
@@ -2523,7 +2523,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                         ),
                       ),
                     ),
-                    SizedBox(height: 8),
+                    SizedBox(height: 12),
                     Text(
                       '알림 시각',
                       style: TextStyle(
@@ -2597,7 +2597,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  // 왼쪽 '알림 시각' 줄과 같은 높이에 오도록 왼쪽 줄 간격과 맞춘다.
+                  const SizedBox(height: 12),
                   Semantics(
                     button: true,
                     label: '알림 시각 $formattedTime, 변경하려면 두 번 탭하세요',
