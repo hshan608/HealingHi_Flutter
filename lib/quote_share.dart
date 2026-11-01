@@ -28,13 +28,14 @@ class QuoteShare {
     return resolvedImagePath != null ? AssetImage(resolvedImagePath) : null;
   }
 
-  /// 이미지 생성 중 하단에 띄우는 안내 문구.
+  /// 이미지 생성 중 화면 가운데에 띄우는 안내 문구.
   static const generatingNotice = '문장에 작은 온기를 더하고 있어요.';
 
   /// 명언 카드를 이미지로 캡처해 공유한다.
   ///
-  /// 이미지를 만드는 동안 하단 스낵바로 [generatingNotice]를 표시하고,
-  /// 공유 시트를 열기 직전에 닫는다.
+  /// 이미지를 만드는 동안 화면 가운데에 로딩 표시와 [generatingNotice]를 띄우고,
+  /// 공유 시트를 열기 직전에 닫는다. 떠 있는 동안에는 뒤 화면 터치를 막아
+  /// 공유 버튼이 중복으로 눌리지 않게 한다.
   /// 이미지 생성이나 공유에 실패하면 텍스트를 클립보드에 복사하고 스낵바로 알린다.
   static Future<void> shareAsImage({
     required BuildContext context,
@@ -135,33 +136,90 @@ class QuoteShare {
     }
   }
 
-  /// [generatingNotice] 스낵바를 띄우고, 그것을 닫는 함수를 돌려준다.
+  /// [generatingNotice] 로딩 안내를 화면 가운데에 띄우고, 그것을 닫는 함수를 돌려준다.
   ///
-  /// 기존 스낵바(대기열 포함)를 즉시 비워 안내가 곧바로 맨 앞에 뜨게 한다.
-  /// `controller.close()`는 맨 앞 스낵바만 닫을 수 있기 때문이다.
+  /// 하단 탭까지 덮도록 루트 Overlay에 넣는다.
   /// 반환된 함수는 여러 번 호출해도 안전하며, 이미 닫혔으면 아무것도 하지 않는다.
   static VoidCallback _showGeneratingNotice(BuildContext context) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return () {};
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return () {};
 
-    messenger
-      ..clearSnackBars()
-      ..removeCurrentSnackBar();
-    final controller = messenger.showSnackBar(
-      const SnackBar(
-        content: Text(generatingNotice),
-        // 생성이 끝나면 직접 닫는다. 지연되더라도 남아 있지 않도록 둔 상한이다.
-        duration: Duration(seconds: 30),
-      ),
+    final entry = OverlayEntry(
+      builder: (_) => const _GeneratingNoticeOverlay(),
     );
+    overlay.insert(entry);
 
     var closed = false;
-    controller.closed.whenComplete(() => closed = true);
     return () {
-      if (closed || !messenger.mounted) return;
+      if (closed) return;
       closed = true;
-      controller.close();
+      if (entry.mounted) entry.remove();
+      entry.dispose();
     };
+  }
+}
+
+/// 공유 이미지 생성 중 화면 가운데에 띄우는 로딩 안내.
+///
+/// 배경색·모서리·강조색은 공용 안내 팝업(`app_popup.dart`)과 같은 톤을 쓴다.
+class _GeneratingNoticeOverlay extends StatelessWidget {
+  const _GeneratingNoticeOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    // 1초 안팎으로 떴다 사라지므로 스크림을 옅게 두고 짧게 페이드 인한다.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 150),
+      builder: (context, opacity, child) =>
+          Opacity(opacity: opacity, child: child),
+      child: Stack(
+        children: [
+          // 생성 중 뒤 화면 터치(공유 버튼 중복 탭 등)를 막는다.
+          const ModalBarrier(dismissible: false, color: Color(0x33000000)),
+          Center(
+            child: Material(
+              type: MaterialType.transparency,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 40),
+                padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F4F1),
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: Color(0xFF81A684),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Semantics(
+                      liveRegion: true,
+                      child: const Text(
+                        QuoteShare.generatingNotice,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w300,
+                          height: 23 / 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
