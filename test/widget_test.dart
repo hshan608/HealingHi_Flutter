@@ -443,7 +443,7 @@ void main() {
     expect(currentScale(), 1.0);
   });
 
-  testWidgets('보관함 탭 강조 영역은 하단 바 위로 침범하지 않는다', (tester) async {
+  testWidgets('보관함 탭 강조 영역은 아이콘 범위만 감싸고 하단 바 위로 침범하지 않는다', (tester) async {
     const barTop = 520.0;
     const barHeight = 80.0;
     await tester.pumpWidget(
@@ -457,16 +457,23 @@ void main() {
                 width: 400,
                 height: barHeight,
                 child: Container(
-                  key: TutorialTargets.bottomNavBar,
                   padding: const EdgeInsets.fromLTRB(11, 0, 11, 34),
                   child: Row(
                     children: [
                       const Expanded(child: SizedBox()),
                       const Expanded(child: SizedBox()),
-                      // 실제 탭은 Column이 바 콘텐츠 높이(46)를 모두 채운다.
+                      // 실제 탭은 바 콘텐츠 높이(46)를 모두 채우고, 가운데에
+                      // 아이콘·라벨 묶음(약 36×41)이 놓인다.
                       Expanded(
                         child: SizedBox.expand(
                           key: TutorialTargets.bookmarkTab,
+                          child: Center(
+                            child: SizedBox(
+                              key: TutorialTargets.bookmarkTabContent,
+                              width: 36,
+                              height: 41,
+                            ),
+                          ),
                         ),
                       ),
                       const Expanded(child: SizedBox()),
@@ -496,12 +503,17 @@ void main() {
 
     final highlight = tester.getRect(targetBorder);
     final tab = tester.getRect(find.byKey(TutorialTargets.bookmarkTab));
+    final content = tester.getRect(
+      find.byKey(TutorialTargets.bookmarkTabContent),
+    );
     // 위쪽은 바 상단에서 4 안쪽에 머물러 본문과의 경계선에 붙지 않는다.
     expect(highlight.top, barTop + 4);
-    // 아래쪽은 탭 끝(시스템 인셋 위)에서 멈추고, 좌우 패딩은 유지된다.
+    // 아래쪽은 탭 끝(시스템 인셋 위)에서 멈춘다.
     expect(highlight.bottom, tab.bottom);
-    expect(highlight.left, tab.left - 8);
-    expect(highlight.right, tab.right + 8);
+    // 좌우는 탭 폭 전체가 아니라 아이콘·라벨 묶음에서 12만 띄운다.
+    expect(highlight.left, content.left - 12);
+    expect(highlight.right, content.right + 12);
+    expect(highlight.width, lessThan(tab.width));
   });
 
   testWidgets('프로필 튜토리얼의 건너뛰기 버튼은 강조 영역 위 최상위에 놓인다', (tester) async {
