@@ -391,7 +391,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           // 세로 가운데 정렬한다(Column의 mainAxisAlignment.center).
           // Scaffold는 bottomNavigationBar에 하단 인셋을 넣어주지 않으므로 직접 처리한다.
           bottomNavigationBar: Container(
-            key: TutorialTargets.bottomNavBar,
             height: _navContentHeight + navBottomInset,
             color: const Color(0xFFF8F9FE),
             padding: EdgeInsets.fromLTRB(11, 0, 11, systemBottomInset),
@@ -422,6 +421,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   inactiveColor: inactiveGrey,
                   iconGap: 4, // Figma 실측 약 3.9
                   key: TutorialTargets.bookmarkTab,
+                  contentKey: TutorialTargets.bookmarkTabContent,
                 ),
                 _buildNavigationItem(
                   index: 3,
@@ -477,6 +477,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     required Color activeColor,
     required Color inactiveColor,
     Key? key,
+    Key? contentKey,
   }) {
     assert(icon != null || iconAsset != null);
     final isSelected = _currentIndex == index;
@@ -490,37 +491,42 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         label: label,
         child: InkWell(
           onTap: () => _onNavTap(index),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (iconAsset != null)
-                SvgPicture.asset(
-                  iconAsset,
-                  width: index == 2
-                      ? 29.2
-                      : (index == 3 ? 27 : (index == 1 ? 24 : 25)),
-                  height: index == 2
-                      ? 25.2
-                      : (index == 3 ? 27 : (index == 1 ? 24 : 25)),
-                  colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-                  fit: BoxFit.contain,
-                )
-              else
-                Icon(icon, size: index == 3 ? 25 : 24, color: color),
-              SizedBox(height: iconGap),
-              Text(
-                label,
-                // 기본 줄 높이(약 17px)로는 아이콘(최대 27) + 간격과 함께
-                // _navContentHeight(46)를 1~3px 넘친다. 줄 높이를 폰트 크기에
-                // 맞춰 46 안에 들어오게 한다.
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.0,
-                  fontWeight: FontWeight.w700,
-                  color: color,
+          // 터치 영역은 탭 전체로 두고, 아이콘·라벨 묶음만 [contentKey]로 측정할 수
+          // 있도록 묶음 크기의 Column을 가운데 놓는다(튜토리얼 강조 영역의 가로 범위).
+          child: Center(
+            child: Column(
+              key: contentKey,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (iconAsset != null)
+                  SvgPicture.asset(
+                    iconAsset,
+                    width: index == 2
+                        ? 29.2
+                        : (index == 3 ? 27 : (index == 1 ? 24 : 25)),
+                    height: index == 2
+                        ? 25.2
+                        : (index == 3 ? 27 : (index == 1 ? 24 : 25)),
+                    colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+                    fit: BoxFit.contain,
+                  )
+                else
+                  Icon(icon, size: index == 3 ? 25 : 24, color: color),
+                SizedBox(height: iconGap),
+                Text(
+                  label,
+                  // 기본 줄 높이(약 17px)로는 아이콘(최대 27) + 간격과 함께
+                  // _navContentHeight(46)를 1~3px 넘친다. 줄 높이를 폰트 크기에
+                  // 맞춰 46 안에 들어오게 한다.
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.0,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

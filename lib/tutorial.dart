@@ -25,9 +25,12 @@ class TutorialTargets {
   static final homeShare = GlobalKey(debugLabel: 'tutorial_home_share');
   static final searchTabs = GlobalKey(debugLabel: 'tutorial_search_tabs');
   static final searchField = GlobalKey(debugLabel: 'tutorial_search_field');
+  // 보관함 탭 전체. 탭 강조 영역이 탭 밖(본문 쪽·홈 인디케이터 쪽)으로 번지지 않도록 경계로 쓴다.
   static final bookmarkTab = GlobalKey(debugLabel: 'tutorial_bookmark_tab');
-  // 하단 바 전체. 탭 강조 영역이 바 밖(본문 쪽)으로 번지지 않도록 경계로 쓴다.
-  static final bottomNavBar = GlobalKey(debugLabel: 'tutorial_bottom_nav_bar');
+  // 보관함 탭의 아이콘·라벨 묶음. 탭 강조 영역의 가로 범위를 이 크기에 맞춘다.
+  static final bookmarkTabContent = GlobalKey(
+    debugLabel: 'tutorial_bookmark_tab_content',
+  );
   static final bookmarkLike = GlobalKey(debugLabel: 'tutorial_bookmark_like');
   static final profileTitle = GlobalKey(debugLabel: 'tutorial_profile_title');
   static final profileImage = GlobalKey(debugLabel: 'tutorial_profile_image');
@@ -620,16 +623,15 @@ List<_TutorialStep> _stepsFor(TutorialSection section) {
         _TutorialStep(
           title: '보관한 명언을 다시 만나보세요.',
           description: '마음에 담아둔 명언을 보관함에서 언제든 다시 볼 수 있어요.',
-          targetKeys: <GlobalKey>[TutorialTargets.bookmarkTab],
+          // 탭 폭 전체가 아니라 아이콘·라벨 묶음에서 좌우 12만 띄워 강조한다.
+          targetKeys: <GlobalKey>[TutorialTargets.bookmarkTabContent],
           fallbackTarget: (size, safeTop) =>
-              Rect.fromLTWH(size.width * 0.625 - 32, size.height - 70, 64, 62),
-          targetPadding: 8,
-          // 탭 사각형은 하단 바에서 시스템 인셋을 뺀 콘텐츠 높이 전체다. 아래쪽 패딩은
-          // 상쇄해 탭 끝(홈 인디케이터 위)에서 멈추고, 위쪽은 바 상단에서 4 안쪽으로
-          // 제한해 강조 테두리가 본문과의 경계선에 붙지 않게 한다.
-          // 결과적으로 아이콘 위·라벨 아래 여백이 비슷해진다.
-          targetBottomInset: 8,
-          boundsKey: TutorialTargets.bottomNavBar,
+              Rect.fromLTWH(size.width * 0.625 - 30, size.height - 70, 60, 62),
+          targetPadding: 12,
+          // 위아래 패딩이 탭 사각형 밖으로 나가면 탭 경계에서 자른다. 아래쪽은 탭 끝
+          // (홈 인디케이터 위)에서 멈추고, 위쪽은 바 상단에서 4 안쪽으로 제한해
+          // 강조 테두리가 본문과의 경계선에 붙지 않게 한다.
+          boundsKey: TutorialTargets.bookmarkTab,
           boundsInsets: const EdgeInsets.only(top: 4),
           calloutTop: (size, safeTop, target) =>
               _fitCalloutTop(target.top - 190, size, safeTop),
