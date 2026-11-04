@@ -786,6 +786,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
   String _selectedLanguage = 'kor'; // 기본값: 한국어
   int _shareCount = 0;
   int _quoteRequestShareCount = 0;
+  // 공유 랭킹 내 순위. 1~3위면 프로필 사진에 반짝이 효과를 띄운다. 모르면 null.
+  int? _myShareRank;
   String? _deviceId;
   bool _isLoading = true;
   bool _isEditingName = false;
@@ -906,12 +908,35 @@ class _MyPageScreenState extends State<MyPageScreen> {
           _isLoading = false;
         });
       }
+      await _loadMyShareRank();
     } catch (e) {
       print('사용자 정보 로드 실패: $e');
       setState(() {
         _isLoading = false;
       });
     }
+  }
+
+  // RLS 때문에 남의 공유 카운트를 읽을 수 없어 순위는 랭킹 RPC로만 알 수 있다.
+  Future<void> _loadMyShareRank() async {
+    try {
+      _applyMyShareRank(await _loadShareLeaderboard());
+    } catch (e) {
+      debugPrint('내 공유 순위 불러오기 실패: $e');
+    }
+  }
+
+  // 공유를 한 번도 하지 않은 사용자는 순위가 높아도 효과를 띄우지 않는다.
+  void _applyMyShareRank(List<Map<String, dynamic>> entries) {
+    int? rank;
+    for (final entry in entries) {
+      if (entry['isCurrentUser'] == true && (entry['shareCount'] as int) > 0) {
+        rank = entry['rank'] as int;
+        break;
+      }
+    }
+    if (!mounted || rank == _myShareRank) return;
+    setState(() => _myShareRank = rank);
   }
 
   void _startEditingName() {
@@ -1750,6 +1775,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
                               width: 148,
                               height: 146,
                               child: Stack(
+                                // 반짝이 효과가 사진 영역 밖으로 퍼지도록 자르지 않는다.
+                                clipBehavior: Clip.none,
                                 children: [
                                   Positioned.fill(
                                     child: ClipOval(
@@ -1778,6 +1805,17 @@ class _MyPageScreenState extends State<MyPageScreen> {
                                             ),
                                     ),
                                   ),
+                                  // 공유 랭킹 1~3위: 사진 중심에 맞춘 반짝이. 카메라 버튼은 그 위에 둔다.
+                                  if (_myShareRank != null &&
+                                      _myShareRank! >= 1 &&
+                                      _myShareRank! <= 3)
+                                    Positioned.fill(
+                                      child: OverflowBox(
+                                        maxWidth: double.infinity,
+                                        maxHeight: double.infinity,
+                                        child: RankSparkle(rank: _myShareRank!),
+                                      ),
+                                    ),
                                   Positioned(
                                     bottom: 2,
                                     right: 0,
@@ -2339,6 +2377,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
   Future<void> _showShareLeaderboard() async {
     final leaderboardFuture = _loadShareLeaderboard();
+    // 시트를 연 김에 받은 순위로 프로필 반짝이 효과도 갱신한다. 실패 처리는 시트가 한다.
+    leaderboardFuture.then(_applyMyShareRank, onError: (_) {});
 
     await showModalBottomSheet<void>(
       context: context,
