@@ -65,7 +65,7 @@ dart format lib/            # `flutter format`은 제거된 명령이다
 | `app_popup.dart` | Figma 400×241 공용 안내 팝업(`AppNoticePopup`, `showAppNoticePopup`). 신청 완료·리뷰 확인·신청 승인 알림에 사용 |
 | `ad_helper.dart`, `nickname_generator.dart` | AdMob 유닛 ID, 결정적 닉네임 생성 |
 | `card_heart_icon.dart` | `CardHeartIcon` — 홈·검색 카드 하트 아이콘. `LikeButton`은 보관 시에만 효과를 그리므로 해제(활성→비활성) 애니메이션을 여기서 재생한다. `likeBuilder` 안에서 쓰고 `identity`에 명언 ID를 넘긴다 |
-| `rank_medal.dart` | `AnimatedRankMedal` — 공유 랭킹 1~3위 메달(`assets/{n}_rank.png`) 흔들림 애니메이션. `disableAnimations`면 정지 이미지 |
+| `rank_medal.dart` | `AnimatedRankMedal` — 공유 랭킹 1~3위 메달(`assets/{n}_rank.png`) 흔들림 애니메이션. `disableAnimations`면 정지 이미지. `RankSparkle` — 내 순위가 1~3위(공유 1회 이상)일 때 설정 탭 프로필 사진 중심에 겹치는 반짝이(`assets/{n}_rank_mist.gif` 위에 `{n}_rank_star.webp`, Figma `mist_{n}`·`star_{n}` GIF). star 원본 GIF의 검정 테두리를 반투명으로 바꾼 애니메이션 WebP라, 시안 GIF를 다시 받으면 같은 처리를 해야 한다. `disableAnimations`면 그리지 않는다. 순위는 `get_share_leaderboard` RPC로만 알 수 있다 |
 | `image_mime.dart` | 업로드 이미지 확장자 → 표준 MIME 변환(`ImageMime`). Storage 업로드의 `contentType`은 반드시 이걸로 만든다 |
 | `responsive.dart` | `AppScale` — 앱 루트 비율 스케일(아래 "반응형 스케일" 절) |
 

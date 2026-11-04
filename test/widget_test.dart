@@ -631,6 +631,46 @@ void main() {
     expect((image.image as AssetImage).assetName, 'assets/3_rank.png');
   });
 
+  testWidgets('랭킹 1~3위 프로필 반짝이는 순위별 mist·star 이미지를 겹쳐 그린다', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Center(child: RankSparkle(rank: 2))),
+      ),
+    );
+
+    final assets = tester
+        .widgetList<Image>(find.byType(Image))
+        .map((image) => (image.image as AssetImage).assetName)
+        .toList();
+    // mist가 아래, star가 위에 놓인다.
+    expect(assets, ['assets/2_rank_mist.gif', 'assets/2_rank_star.webp']);
+    // GIF 원본 비율(250×220)을 유지한다.
+    final size = tester.getSize(find.byType(RankSparkle));
+    expect(size.width, 210);
+    expect(size.height, closeTo(210 * 220 / 250, 0.01));
+    // 장식이므로 아래 프로필 사진 탭을 가로채지 않는다.
+    expect(
+      find.descendant(
+        of: find.byType(RankSparkle),
+        matching: find.byType(IgnorePointer),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('애니메이션이 비활성화된 기기에서는 프로필 반짝이를 그리지 않는다', (tester) async {
+    await tester.pumpWidget(
+      const MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: Scaffold(body: Center(child: RankSparkle(rank: 1))),
+        ),
+      ),
+    );
+
+    expect(find.byType(Image), findsNothing);
+  });
+
   testWidgets('같은 저자의 이미지 별칭은 하나의 대표 이미지로 통일된다', (tester) async {
     await ResonerImageHelper.load();
 
